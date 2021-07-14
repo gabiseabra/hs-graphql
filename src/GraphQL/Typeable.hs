@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds, TypeFamilies, GADTs #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module GraphQL.Typeable where
 
@@ -14,11 +14,11 @@ data TypeKind
   | ENUM
   | UNION
   | OBJECT
+  | INPUT_OBJECT
   | NULLABLE TypeKind
   | LIST TypeKind
 
-data TypeRep where
-  Rep :: InstanceOf t a => t a -> TypeRep
+data TypeRep where TypeRep :: InstanceOf t a => t a -> TypeRep
 
 type EnumValue = Text
 
@@ -28,13 +28,14 @@ type InnerType = TypeRep
 
 data Field
   = Field
-    { name :: String
+    { name :: Text
+    , inputRep :: TypeRep
     , typeRep :: TypeRep
     }
 
 data InputField
   = InputField
-    { name :: String
+    { name :: Text
     , typeRep :: TypeRep
     }
 
@@ -43,13 +44,16 @@ data TypeDef k where
   EnumDef :: [EnumValue] -> TypeDef ENUM
   UnionDef :: [PossibleType] -> TypeDef UNION
   ObjectDef :: [Field] -> TypeDef OBJECT
+  InputObjectDef :: [InputField] -> TypeDef OBJECT
   --ListDef :: InnerType -> TypeDef (LIST k)
   --NullableDef :: InnerType -> TypeDef (NULLABLE k)
 
+-- | Class of GraphQL type kinds
 class GraphQLType t where
   type KindOf t :: TypeKind
   typeDef :: InstanceOf t a => t a -> TypeDef (KindOf t)
 
+-- | Class of GraphQL types
 class GraphQLType (TypeOf a) => GraphQLTypeable a where
   type TypeOf a :: * -> *
   typeOf :: (TypeOf a) a
