@@ -1,9 +1,19 @@
 {-# LANGUAGE DataKinds, TypeFamilies, GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeOperators #-}
 
-module GraphQL.IO.Output where
+module GraphQL.IO.Output
+  ( NodeType(..)
+  , NodeTypeOf
+  , Resolution(..)
+  , Resolver(..)
+  , IsResolver(..)
+  , rootResolver
+  , GraphQLOutputKind(..)
+  ) where
 
 import GraphQL.Typeable
 import GraphQL.IO.Kinds
@@ -14,6 +24,7 @@ import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..), bimap)
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
+import qualified Data.Row as Row
 
 data NodeType = LEAF | BRANCH | WRAPPER NodeType
 
@@ -58,30 +69,40 @@ instance ToJSON a => ToJSON (Resolution n a a) where
 
 data Resolver m where
   Resolver ::
-    ( GraphQLTypeable a
-    , GraphQLOutputType m (TypeOf a)
+    ( GraphQLType a
+    , GraphQLOutputKind m (KindOf a)
     -- , GraphQLInput i
     ) => (({-o-}) -> m a) -> Resolver m
 
 rootResolver
   :: Monad m
-  => GraphQLTypeable a
-  => GraphQLOutputType m (TypeOf a)
+  => GraphQLType a
+  => GraphQLOutputKind m (KindOf a)
   => a
   -> Resolver m
 rootResolver a = Resolver (\() -> return a)
 
 class IsResolver (m :: * -> *) a | a -> m where
+  type InputOf a :: *
+  type OutputOf a :: *
   mkResolver :: a -> Resolver m
+  mkField :: Row.KnownSymbol l => Row.Label l -> proxy a -> Field
 instance
-  ( GraphQLTypeable a
-  , GraphQLOutputType m (TypeOf a)
-  --, GraphQLInput i
-  ) => IsResolver m (({-i-}) -> m a) where
+  ( GraphQLType a
+  , InstanceOf t a
+  , GraphQLOutputKind m t
+  ) => IsResolver m (() -> m a) where
+  type InputOf (() -> m a) = ()
+  type OutputOf (() -> m a) = a
   mkResolver = Resolver
+  mkField l proxy
+    = Field
+      { name = Text.pack (show l)
+      , typeRep = TypeRep (typeOf @a)
+      }
 
 class
-  ( GraphQLType t
-  , (KindOf t) !>> OUT
-  ) => GraphQLOutputType (m :: * -> *) (t :: * -> *) where
-  resolve :: t a -> a -> (Resolution (NodeTypeOf (KindOf t)) JSON.Value (Resolver m))
+  ( GraphQLKind t
+  , (Kind t) !>> OUT
+  ) => GraphQLOutputKind (m :: * -> *) (t :: * -> *) where
+  resolve :: t a -> a -> (Resolution (NodeTypeOf (Kind t)) JSON.Value (Resolver m))

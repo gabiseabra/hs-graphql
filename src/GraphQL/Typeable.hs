@@ -2,8 +2,22 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
-module GraphQL.Typeable where
+module GraphQL.Typeable
+  ( Typename
+  , TypeKind(..)
+  , TypeRep(..)
+  , EnumValue
+  , PossibleType
+  , InnerType
+  , Field(..)
+  , InputField(..)
+  , TypeDef(..)
+  , GraphQLKind(..)
+  , GraphQLType(..)
+  , InstanceOf
+  ) where
 
 import Data.Text (Text)
 
@@ -29,7 +43,7 @@ type InnerType = TypeRep
 data Field
   = Field
     { name :: Text
-    , inputRep :: TypeRep
+    -- , inputRep :: TypeRep
     , typeRep :: TypeRep
     }
 
@@ -49,14 +63,14 @@ data TypeDef k where
   --NullableDef :: InnerType -> TypeDef (NULLABLE k)
 
 -- | Class of GraphQL type kinds
-class GraphQLType t where
-  type KindOf t :: TypeKind
-  typeDef :: InstanceOf t a => t a -> TypeDef (KindOf t)
+class GraphQLKind t where
+  type Kind t :: TypeKind
+  typeDef :: InstanceOf t a => t a -> TypeDef (Kind t)
 
 -- | Class of GraphQL types
-class GraphQLType (TypeOf a) => GraphQLTypeable a where
-  type TypeOf a :: * -> *
-  typeOf :: (TypeOf a) a
+class GraphQLKind (KindOf a) => GraphQLType a where
+  type KindOf a :: * -> *
+  typeOf :: (KindOf a) a
   typename :: proxy a -> Typename
   description :: proxy a -> Maybe Text
   description _ = Nothing
@@ -64,7 +78,7 @@ class GraphQLType (TypeOf a) => GraphQLTypeable a where
   deprecationReason _ = Nothing
 
 type InstanceOf t a
-  = ( GraphQLTypeable a
-    , GraphQLType t
-    , TypeOf a ~ t
+  = ( GraphQLType a
+    , GraphQLKind t
+    , KindOf a ~ t
     )

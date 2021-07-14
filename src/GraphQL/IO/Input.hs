@@ -4,7 +4,14 @@
 {-# LANGUAGE KindSignatures, DefaultSignatures #-}
 {-# LANGUAGE TypeOperators #-}
 
-module GraphQL.IO.Input where
+module GraphQL.IO.Input
+  ( E
+  , VariableAssignment(..)
+  , Variables
+  , resolveVariables
+  , GraphQLInputKind(..)
+  , GraphQLInput(..)
+  ) where
 
 import GraphQL.Typeable
 import GraphQL.IO.Kinds
@@ -50,14 +57,14 @@ resolveVariables vars input = Map.fromList (map (fmap enc) vars)
 
 -- | A GraphQL type that is allowed in inputs
 class
-  ( GraphQLType t
-  , (KindOf t) !>> IN
-  ) => GraphQLInputType (t :: * -> *) where
+  ( GraphQLKind t
+  , (Kind t) !>> IN
+  ) => GraphQLInputKind (t :: * -> *) where
   readInputType :: t a -> JSON.Value -> E a
 
 class IsInput a where
   toTypeRep :: proxy a -> TypeRep
-instance ( GraphQLTypeable a, InstanceOf t a ) => IsInput a where
+instance ( GraphQLType a, InstanceOf t a ) => IsInput a where
   toTypeRep _ = TypeRep (typeOf @a)
 
 -- | A GraphQL input is an object of input types (not a proper type)

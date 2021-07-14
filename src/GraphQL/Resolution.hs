@@ -57,8 +57,8 @@ unfoldResolution
   => Base t ~ SelectionTreeF
   => Corecursive u
   => Base u ~ ResolutionF JSON.Value
-  => GraphQLTypeable a
-  => GraphQLOutputType m (TypeOf a)
+  => GraphQLType a
+  => GraphQLOutputKind m (KindOf a)
   => a
   -> t
   -> m u

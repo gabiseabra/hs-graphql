@@ -17,10 +17,10 @@ data Selection
     { name :: String
     , alias :: Maybe String
     , variables :: Variables
-    -- , typeConstraint :: Maybe Typename
+    , typeConstraint :: Maybe Typename
     } deriving (Show)
 
 type SelectionTreeF = TreeF Selection
 
-rootSelection = NodeF (Sel { name = "data", alias = Nothing, variables = [] })
+rootSelection = NodeF (Sel { name = "data", alias = Nothing, variables = [], typeConstraint = Nothing })
 rootSelection_ = rootSelection . pure
