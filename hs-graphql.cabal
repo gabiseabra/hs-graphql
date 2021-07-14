@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:
     GraphQL.Class
+    GraphQL.Internal
     GraphQL.Kinds
     GraphQL.Selection
     GraphQL.Resolution

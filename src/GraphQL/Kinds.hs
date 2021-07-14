@@ -2,9 +2,6 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
 module GraphQL.Kinds
@@ -12,6 +9,7 @@ module GraphQL.Kinds
   , GraphQLObject(..)
   ) where
 
+import GraphQL.Internal (mapRow)
 import GraphQL.Class
 import GraphQL.IO.Output
 import GraphQL.IO.Input
@@ -20,10 +18,8 @@ import GHC.Exts (Constraint)
 
 import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import Data.Functor.Const (Const(..))
 import qualified Data.HashMap.Strict as Map
 import Data.Maybe (fromMaybe)
-import Data.Proxy (Proxy(..))
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
 import Data.Row.Internal (LT(..), Row(..), Label(..))
@@ -80,13 +76,3 @@ instance GraphQLInputKind (GraphQLInputObject r) where
           val = fromMaybe JSON.Null $ Map.lookup key obj
         in readInput val
   readInputType InputObject _ = JSON.Error "input value is not an object"
-
-mapRow :: forall c r b
-  .  Row.Forall r c
-  => Row.AllUniqueLabels r
-  => (forall proxy l a. (Row.KnownSymbol l, c a) => Row.Label l -> proxy a -> b)
-  -> [b]
-mapRow f = getConst $ Rec.fromLabelsA @c @(Const [b]) @r g
-  where
-    g :: forall l a. (Row.KnownSymbol l, c a) => Row.Label l -> Const [b] a
-    g l = Const [f l (Proxy @a)]

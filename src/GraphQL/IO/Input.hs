@@ -12,8 +12,10 @@ module GraphQL.IO.Input
   , GraphQLInputKind(..)
   , GraphQLInput(..)
   , IsInput(..)
+  , ToInputFields
   ) where
 
+import GraphQL.Internal (mapRow)
 import GraphQL.Class
 import GraphQL.IO.Kinds
 
@@ -62,13 +64,24 @@ class
   readInputType :: t a -> JSON.Value -> JSON.Result a
 
 -- | A GraphQL input is an object of input types (not a proper type)
-class Row.FreeForall (InputFieldsOf a) => GraphQLInput a where
+class Row.Forall (InputFieldsOf a) IsInput => GraphQLInput a where
   type InputFieldsOf a :: Row *
   toInputFieldsList :: proxy a -> [InputField]
-  -- default toInputFieldsList
-  --   :: Row.ToNative a
-  --   =>
+  default toInputFieldsList
+    :: Rec.AllUniqueLabels (InputFieldsOf a)
+    => Rec.ToNative a
+    => InputFieldsOf a ~ Rec.NativeRow a
+    => proxy a
+    -> [InputField]
+  toInputFieldsList _ = mapRow @IsInput @(InputFieldsOf a) mkInputField
   fromInputFields :: Rec (InputFieldsOf a) -> a
+  default fromInputFields
+    :: Rec.AllUniqueLabels (InputFieldsOf a)
+    => Rec.ToNative a
+    => InputFieldsOf a ~ Rec.NativeRow a
+    => Rec (InputFieldsOf a)
+    -> a
+  fromInputFields = Rec.toNative
 
 instance GraphQLInput () where
   type InputFieldsOf () = Row.Empty
@@ -89,3 +102,5 @@ instance
       { name = Text.pack (show l)
       , typeRep = TypeRep (typeOf @a)
       }
+
+type ToInputFields a = Rec.NativeRow a
