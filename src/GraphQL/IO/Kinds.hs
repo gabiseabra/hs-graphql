@@ -4,7 +4,7 @@
 
 module GraphQL.IO.Kinds where
 
-import GraphQL.Typeable (TypeKind(..))
+import GraphQL.Class (TypeKind(..))
 
 data TypeIO = IN | OUT
 

@@ -7,7 +7,7 @@ module GraphQL.Selection
   , rootSelection_
   ) where
 
-import GraphQL.Typeable
+import GraphQL.Class
 import GraphQL.IO.Input
 
 import Data.Functor.Base (TreeF(..))

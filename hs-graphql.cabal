@@ -16,7 +16,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    GraphQL.Typeable
+    GraphQL.Class
     GraphQL.Kinds
     GraphQL.Selection
     GraphQL.Resolution

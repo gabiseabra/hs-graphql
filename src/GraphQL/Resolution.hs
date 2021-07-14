@@ -5,7 +5,7 @@
 
 module GraphQL.Resolution where
 
-import GraphQL.Typeable
+import GraphQL.Class
 import GraphQL.Selection
 import GraphQL.IO.Output
 import GraphQL.IO.Input

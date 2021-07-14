@@ -4,7 +4,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module GraphQL.Typeable
+module GraphQL.Class
   ( Typename
   , TypeKind(..)
   , TypeRep(..)

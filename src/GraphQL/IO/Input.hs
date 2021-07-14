@@ -14,7 +14,7 @@ module GraphQL.IO.Input
   , IsInput(..)
   ) where
 
-import GraphQL.Typeable
+import GraphQL.Class
 import GraphQL.IO.Kinds
 
 import Control.Monad.Except (MonadError(..))

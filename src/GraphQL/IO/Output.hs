@@ -15,7 +15,7 @@ module GraphQL.IO.Output
   , GraphQLOutputKind(..)
   ) where
 
-import GraphQL.Typeable
+import GraphQL.Class
 import GraphQL.IO.Kinds
 import GraphQL.IO.Input
 

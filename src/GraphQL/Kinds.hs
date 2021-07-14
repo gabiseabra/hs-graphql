@@ -12,7 +12,7 @@ module GraphQL.Kinds
   , GraphQLObject(..)
   ) where
 
-import GraphQL.Typeable
+import GraphQL.Class
 import GraphQL.IO.Output
 import GraphQL.IO.Input
 
