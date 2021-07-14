@@ -21,6 +21,8 @@ import GHC.Exts (Constraint)
 import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
 import Data.Functor.Const (Const(..))
+import qualified Data.HashMap.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Proxy (Proxy(..))
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
@@ -39,9 +41,7 @@ instance GraphQLKind GraphQLScalar where
   type Kind GraphQLScalar = SCALAR
   typeDef Scalar = ScalarDef
 instance GraphQLInputKind GraphQLScalar where
-  readInputType Scalar v = case JSON.fromJSON v of
-    JSON.Error e -> Left (Text.pack e)
-    JSON.Success a -> Right a
+  readInputType Scalar = JSON.fromJSON
 instance GraphQLOutputKind m GraphQLScalar where
   resolve Scalar = Leaf . JSON.toJSON
 
@@ -58,6 +58,29 @@ instance GraphQLKind (GraphQLObject m r) where
   typeDef Object = ObjectDef $ mapRow @(IsResolver m) @r mkField
 instance GraphQLOutputKind m (GraphQLObject m r) where
   resolve Object = Branch . Rec.eraseWithLabels @(IsResolver m) @r mkResolver . Rec.fromNative
+
+data GraphQLInputObject r a where
+  InputObject ::
+    ( Rec.ToNative a
+    , Rec.NativeRow a ~ r
+    , Row.AllUniqueLabels r
+    , Row.Forall r IsInput
+    ) => GraphQLInputObject r a
+
+instance GraphQLKind (GraphQLInputObject r) where
+  type Kind (GraphQLInputObject r) = INPUT_OBJECT
+  typeDef InputObject = InputObjectDef $ mapRow @IsInput @r mkInputField
+instance GraphQLInputKind (GraphQLInputObject r) where
+  readInputType InputObject (JSON.Object obj) = return . Rec.toNative =<< Rec.fromLabelsA @IsInput @JSON.Result @r readField
+    where
+      readField :: forall l a. (Row.KnownSymbol l, IsInput a) => Row.Label l -> JSON.Result a
+      readField l =
+        let
+          key = Text.pack (show l)
+          val = fromMaybe JSON.Null $ Map.lookup key obj
+        in readInput val
+  readInputType InputObject _ = JSON.Error "input value is not an object"
+
 mapRow :: forall c r b
   .  Row.Forall r c
   => Row.AllUniqueLabels r

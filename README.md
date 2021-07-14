@@ -12,7 +12,7 @@ data ID = ID Int
 
 instance GraphQLTypeable ID where
   type KindOf ID = Scalar
-  kindOf = Scalar
+  typename _ = "ID"
 ```
 
 ### kinds

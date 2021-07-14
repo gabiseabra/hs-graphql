@@ -58,7 +58,7 @@ data TypeDef k where
   EnumDef :: [EnumValue] -> TypeDef ENUM
   UnionDef :: [PossibleType] -> TypeDef UNION
   ObjectDef :: [Field] -> TypeDef OBJECT
-  InputObjectDef :: [InputField] -> TypeDef OBJECT
+  InputObjectDef :: [InputField] -> TypeDef INPUT_OBJECT
   --ListDef :: InnerType -> TypeDef (LIST k)
   --NullableDef :: InnerType -> TypeDef (NULLABLE k)
 

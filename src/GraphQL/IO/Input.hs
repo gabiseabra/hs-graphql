@@ -2,15 +2,16 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 {-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE KindSignatures, DefaultSignatures #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TypeOperators #-}
 
 module GraphQL.IO.Input
-  ( E
-  , VariableAssignment(..)
+  ( VariableAssignment(..)
   , Variables
   , resolveVariables
   , GraphQLInputKind(..)
   , GraphQLInput(..)
+  , IsInput(..)
   ) where
 
 import GraphQL.Typeable
@@ -27,8 +28,6 @@ import Data.Row.Records (Rec, Row)
 import qualified Data.Row.Records as Rec
 import qualified Data.Row as Row
 type Input = JSON.Object
-
-type E = Either Text
 
 data VariableAssignment
   = Var Text
@@ -60,12 +59,7 @@ class
   ( GraphQLKind t
   , (Kind t) !>> IN
   ) => GraphQLInputKind (t :: * -> *) where
-  readInputType :: t a -> JSON.Value -> E a
-
-class IsInput a where
-  toTypeRep :: proxy a -> TypeRep
-instance ( GraphQLType a, InstanceOf t a ) => IsInput a where
-  toTypeRep _ = TypeRep (typeOf @a)
+  readInputType :: t a -> JSON.Value -> JSON.Result a
 
 -- | A GraphQL input is an object of input types (not a proper type)
 class Row.FreeForall (InputFieldsOf a) => GraphQLInput a where
@@ -80,3 +74,18 @@ instance GraphQLInput () where
   type InputFieldsOf () = Row.Empty
   toInputFieldsList = const []
   fromInputFields = const ()
+
+class IsInput a where
+  readInput :: JSON.Value -> JSON.Result a
+  mkInputField :: Row.KnownSymbol l => Row.Label l -> proxy a -> InputField
+instance
+  ( GraphQLType a
+  , InstanceOf t a
+  , GraphQLInputKind t
+  ) => IsInput a where
+  readInput = readInputType (typeOf @a)
+  mkInputField l _
+    = InputField
+      { name = Text.pack (show l)
+      , typeRep = TypeRep (typeOf @a)
+      }
