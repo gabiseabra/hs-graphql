@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 {-# LANGUAGE DuplicateRecordFields, NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes #-}
 
 module GraphQL.Resolution where
 
@@ -51,8 +52,8 @@ anaM
   -> a -> m t
 anaM psi = let h = return . embed <=< mapM h <=< psi in h
 
-unfoldResolution
-  :: Monad m
+unfoldResolution :: forall u t m a
+  .  Monad m
   => Recursive t
   => Base t ~ SelectionTreeF
   => Corecursive u
@@ -60,11 +61,11 @@ unfoldResolution
   => GraphQLType a
   => GraphQLOutputKind m (KindOf a)
   => a
-  -> t
+  -> [t]
   -> m u
 unfoldResolution a0 = anaM coalg . root
   where
-    root t = (rootResolver a0, rootSelection_ t)
+    root t = (rootResolver a0, rootSelection t)
     coalg
       :: Monad m
       => Recursive t

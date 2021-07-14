@@ -1,12 +1,14 @@
-{-# LANGUAGE DataKinds, TypeFamilies, GADTs #-}
+{-# LANGUAGE DataKinds, TypeFamilies, GADTs, StandaloneKindSignatures #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE LiberalTypeSynonyms #-}
 
 module GraphQL.Kinds
   ( GraphQLScalar(..)
   , GraphQLObject(..)
+  , Row
   ) where
 
 import GraphQL.Internal (mapRow)
@@ -22,10 +24,11 @@ import qualified Data.HashMap.Strict as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
-import Data.Row.Internal (LT(..), Row(..), Label(..))
 import Data.String (IsString)
 import qualified Data.Text as Text
 import Data.Text (Text)
+
+type Row a = Rec.NativeRow a
 
 data GraphQLScalar a where
   Scalar ::

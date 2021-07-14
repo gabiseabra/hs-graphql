@@ -4,7 +4,6 @@ module GraphQL.Selection
   ( Selection(..)
   , SelectionTreeF
   , rootSelection
-  , rootSelection_
   ) where
 
 import GraphQL.Class
@@ -23,4 +22,3 @@ data Selection
 type SelectionTreeF = TreeF Selection
 
 rootSelection = NodeF (Sel { name = "data", alias = Nothing, variables = [], typeConstraint = Nothing })
-rootSelection_ = rootSelection . pure
