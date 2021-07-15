@@ -96,11 +96,11 @@ instance
   , InstanceOf t a
   , GraphQLInputKind t
   ) => IsInput a where
-  readInput = readInputType (typeOf @a)
+  readInput = readInputType (typeOf @t @a)
   mkInputField l _
     = InputField
       { name = Text.pack (show l)
-      , typeRep = TypeRep (typeOf @a)
+      , typeRep = TypeRep (typeOf @t @a)
       }
 
 type ToInputFields a = Rec.NativeRow a

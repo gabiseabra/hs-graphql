@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
 
 module GraphQL.Kinds
   ( GraphQLScalar(..)
@@ -39,6 +39,11 @@ data GraphQLScalar a where
 instance GraphQLKind GraphQLScalar where
   type Kind GraphQLScalar = SCALAR
   typeDef Scalar = ScalarDef
+instance
+  ( JSON.FromJSON a
+  , JSON.ToJSON a
+  ) => GraphQLTypeable GraphQLScalar a where
+  typeOf = Scalar
 instance GraphQLInputKind GraphQLScalar where
   readInputType Scalar = JSON.fromJSON
 instance GraphQLOutputKind m GraphQLScalar where
@@ -55,6 +60,13 @@ data GraphQLObject m r a where
 instance GraphQLKind (GraphQLObject m r) where
   type Kind (GraphQLObject m r) = OBJECT
   typeDef Object = ObjectDef $ mapRow @(IsResolver m) @r mkField
+instance
+  ( Rec.FromNative a
+  , Rec.NativeRow a ~ r
+  , Row.AllUniqueLabels r
+  , Row.Forall r (IsResolver m)
+  ) => GraphQLTypeable (GraphQLObject m r) a where
+  typeOf = Object
 instance GraphQLOutputKind m (GraphQLObject m r) where
   resolve Object = Branch . Rec.eraseWithLabels @(IsResolver m) @r mkResolver . Rec.fromNative
 
@@ -69,6 +81,13 @@ data GraphQLInputObject r a where
 instance GraphQLKind (GraphQLInputObject r) where
   type Kind (GraphQLInputObject r) = INPUT_OBJECT
   typeDef InputObject = InputObjectDef $ mapRow @IsInput @r mkInputField
+instance
+  ( Rec.ToNative a
+  , Rec.NativeRow a ~ r
+  , Row.AllUniqueLabels r
+  , Row.Forall r IsInput
+  ) => GraphQLTypeable (GraphQLInputObject r) a where
+  typeOf = InputObject
 instance GraphQLInputKind (GraphQLInputObject r) where
   readInputType InputObject (JSON.Object obj) = return . Rec.toNative =<< Rec.fromLabelsA @IsInput @JSON.Result @r readField
     where

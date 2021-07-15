@@ -32,7 +32,6 @@ data A m
 
 instance GraphQLType (A m) where
   type KindOf (A m) = GraphQLObject m (Row (A m))
-  typeOf = Object
   typename _ = "A"
 
 a :: A IO

@@ -70,7 +70,8 @@ instance ToJSON a => ToJSON (Resolution n a a) where
 data Resolver m where
   Resolver ::
     ( GraphQLType a
-    , GraphQLOutputKind m (KindOf a)
+    , InstanceOf t a
+    , GraphQLOutputKind m t
     -- , GraphQLInput i
     ) => (({-o-}) -> m a) -> Resolver m
 
@@ -98,7 +99,7 @@ instance
   mkField l proxy
     = Field
       { name = Text.pack (show l)
-      , typeRep = TypeRep (typeOf @a)
+      , typeRep = TypeRep (typeOf @t @a)
       }
 
 class

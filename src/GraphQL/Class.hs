@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds, TypeFamilies, GADTs #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -16,6 +17,8 @@ module GraphQL.Class
   , TypeDef(..)
   , GraphQLKind(..)
   , GraphQLType(..)
+  , GraphQLTypeable(..)
+  , typeOf_
   , InstanceOf
   ) where
 
@@ -67,10 +70,16 @@ class GraphQLKind t where
   type Kind t :: TypeKind
   typeDef :: InstanceOf t a => t a -> TypeDef (Kind t)
 
+-- | Defines how to instantiate a proxy of kind t for some type a
+class GraphQLKind t => GraphQLTypeable t a where
+  typeOf :: t a
+
+typeOf_ :: forall a. GraphQLType a => (KindOf a) a
+typeOf_ = typeOf @(KindOf a) @a
+
 -- | Class of GraphQL types
-class GraphQLKind (KindOf a) => GraphQLType a where
+class GraphQLTypeable (KindOf a) a => GraphQLType a where
   type KindOf a :: * -> *
-  typeOf :: (KindOf a) a
   typename :: proxy a -> Typename
   description :: proxy a -> Maybe Text
   description _ = Nothing
@@ -79,6 +88,5 @@ class GraphQLKind (KindOf a) => GraphQLType a where
 
 type InstanceOf t a
   = ( GraphQLType a
-    , GraphQLKind t
     , KindOf a ~ t
     )

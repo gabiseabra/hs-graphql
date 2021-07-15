@@ -5,33 +5,36 @@ wip
 ## components of the type system
 
 ### types
-this is the public api through which haskell data types may implement a graphql type of some kind.
-this is done  by implementing an instance of `GraphQLTypeable`:
-```hs
-data ID = ID Int
+This is the public api through which haskell data types may implement a GraphQL type of some kind.
+This is done  by implementing an instance of `GraphQLType`:
 
-instance GraphQLTypeable ID where
-  type KindOf ID = Scalar
+```hs
+newtype ID = ID String deriving (FromJSON, ToJSON)
+
+instance GraphQLType ID where
+  type KindOf ID = GraphQLScalar
   typename _ = "ID"
 ```
 
 ### kinds
-a graphql kind is a proxy type such as `Scalar` in the example above that generally carries a dictionary from its argument.
-type kinds can also be extended by implementing `GraphQLKind`, which will translate its argument into a graphql type definition:
+A graphql kind is a proxy type, such as the `GraphQLScalar` in the example above, that generally carries a dictionary of instances from its carrier type to be used for resolution and introspection.
+Type kinds can also be extended by implementing `GraphQLKind`, which translates its argument into a graphql type definition, and `GraphQLTypeable` which defines how to instantiate the proxy data type:
 ```hs
-data Scalar a where
+data GraphQLScalar a where
   Scalar :: (FromJSON a, ToJSON a) => Scalar a
 
-instance GraphQLKind Scalar where
-  type Kin Scalar = SCALAR
+instance GraphQLKind GraphQLScalar where
+  type Kind GraphQLScalar = SCALAR
   typeDef Scalar = ScalarDef
+instance (FromJSON a , ToJSON a) => GraphQLTypeable GraphQLScalar a where
+  typeOf = Scalar
 ```
-To plug its carrier type into an executable resolver it must further implement `GraphQLInputKind`, `GraphQLOutputKind`, or both depending on its `Kin` type. such is the case for scalars: 
+To plug its carrier type into an executable resolver it must further implement `GraphQLInputKind`, `GraphQLOutputKind`, or both depending on its `Kind` type. Such is the case for scalars:
 ```hs
-instance GraphQLInputKind Scalar where
-  readInputType Scalar = fromJSON # this is now the actual impl
-instance GraphQLOutputKind m Scalar where
-  resolve Scalar = pure . toJson
+instance GraphQLInputKind GraphQLScalar where
+  readInputType Scalar = fromJSON
+instance GraphQLOutputKind m GraphQLScalar where
+  resolve Scalar = Leaf . toJson
 ```
 
 ## todo
@@ -46,8 +49,7 @@ instance GraphQLOutputKind m Scalar where
   - [ ] lists
   - [ ] nullable
 - [ ] parsing
-  - [ ] parse selection from string
-  - [ ] validation
+- [ ] validation
 - [x] resolvers
   - [x] resolve objects recursively
   - [ ] apply inputs

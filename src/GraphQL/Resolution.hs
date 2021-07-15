@@ -76,7 +76,7 @@ unfoldResolution a0 = anaM coalg . root
       = return
       . Res
       . select (fmap project sel)
-      . resolve typeOf
+      . resolve typeOf_
       =<< f ()
 
 foldResolution :: Recursive u => Base u ~ ResolutionF JSON.Value => u -> JSON.Value
