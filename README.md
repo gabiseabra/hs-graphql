@@ -33,3 +33,26 @@ instance GraphQLInputKind Scalar where
 instance GraphQLOutputKind m Scalar where
   resolve Scalar = pure . toJson
 ```
+
+## todo
+
+- [ ] kinds
+  - [x] scalars
+  - [ ] enums
+  - [x] objects
+  - [ ] input objects
+  - [ ] unions
+  - [ ] interfaces
+  - [ ] lists
+  - [ ] nullable
+- [ ] parsing
+  - [ ] parse selection from string
+  - [ ] validation
+- [x] resolvers
+  - [x] resolve objects recursively
+  - [ ] apply inputs
+  - [ ] error handling
+- [ ] root resolver
+  - [ ] map operation types to their respective resolvers
+  - [ ] extract all types defined in the resolvers recursively
+- [ ] schema introspection
