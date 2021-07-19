@@ -1,7 +1,9 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE
+    TypeFamilies
+  , FlexibleInstances
+  , OverloadedStrings
+  , GeneralizedNewtypeDeriving
+#-}
 
 module GraphQL.Types where
 

@@ -1,34 +1,34 @@
-{-# LANGUAGE DataKinds, TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
-{-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
-{-# LANGUAGE KindSignatures, DefaultSignatures #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE
+    DataKinds
+  , TypeFamilies
+  , FlexibleContexts
+  , FlexibleInstances
+  , UndecidableInstances
+  , TypeApplications
+  , ScopedTypeVariables
+  , DefaultSignatures
+  , TypeOperators
+#-}
 
-module GraphQL.IO.Input
-  ( VariableAssignment(..)
-  , Variables
-  , resolveVariables
-  , GraphQLInputKind(..)
-  , GraphQLInput(..)
-  , IsInput(..)
-  , ToInputFields
-  ) where
+module GraphQL.IO.Input where
 
-import GraphQL.Internal (mapRow)
+import GraphQL.Internal
 import GraphQL.Class
 import GraphQL.IO.Kinds
 
-import Control.Monad.Except (MonadError(..))
-import Data.Aeson (FromJSON(..), Object, Value(..), Result(..))
+import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
+import qualified Data.Aeson.Types as JSON
+import Data.Aeson.Types ((<?>))
 import qualified Data.HashMap.Strict as Map
+import qualified Data.List as List
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
-import qualified Data.Text as Text
 import Data.Row.Records (Rec, Row)
 import qualified Data.Row.Records as Rec
 import qualified Data.Row as Row
+import Data.Text (Text)
+import qualified Data.Text as Text
+
 type Input = JSON.Object
 
 data VariableAssignment
@@ -53,54 +53,62 @@ resolveVariables vars input = Map.fromList (map (fmap enc) vars)
     enc (BoolVal v) = JSON.toJSON v
     enc (EnumVal v) = JSON.toJSON v
     enc (ListVal v) = JSON.toJSON (map enc v)
-    enc (ObjectVal v) = Object (Map.fromList (map (fmap enc) v))
-    enc (Var v) = fromMaybe Null (Map.lookup v input)
+    enc (ObjectVal v) = JSON.Object (Map.fromList (map (fmap enc) v))
+    enc (Var v) = fromMaybe JSON.Null (Map.lookup v input)
 
 -- | A GraphQL type that is allowed in inputs
 class
   ( GraphQLKind t
   , (Kind t) !>> IN
   ) => GraphQLInputKind (t :: * -> *) where
-  readInputType :: t a -> JSON.Value -> JSON.Result a
+  readInputType :: MonadFail v => t a -> JSON.Value -> v a
 
--- | A GraphQL input is an object of input types (not a proper type)
-class Row.Forall (InputFieldsOf a) IsInput => GraphQLInput a where
-  type InputFieldsOf a :: Row *
-  toInputFieldsList :: proxy a -> [InputField]
-  default toInputFieldsList
-    :: Rec.AllUniqueLabels (InputFieldsOf a)
+class GraphQLInput a where
+  readInput :: MonadFail v => JSON.Value -> v a
+  default readInput
+    :: MonadFail v
     => Rec.ToNative a
-    => InputFieldsOf a ~ Rec.NativeRow a
-    => proxy a
-    -> [InputField]
-  toInputFieldsList _ = mapRow @IsInput @(InputFieldsOf a) mkInputField
-  fromInputFields :: Rec (InputFieldsOf a) -> a
-  default fromInputFields
-    :: Rec.AllUniqueLabels (InputFieldsOf a)
-    => Rec.ToNative a
-    => InputFieldsOf a ~ Rec.NativeRow a
-    => Rec (InputFieldsOf a)
-    -> a
-  fromInputFields = Rec.toNative
+    => Rec.AllUniqueLabels (Rec.NativeRow a)
+    => Rec.Forall (Rec.NativeRow a) GraphQLInputType
+    => JSON.Value
+    -> v a
+  readInput = pure . Rec.toNative <=< readInputFields
 
-instance GraphQLInput () where
-  type InputFieldsOf () = Row.Empty
-  toInputFieldsList = const []
-  fromInputFields = const ()
+instance GraphQLInput () where readInput _ = pure ()
 
-class IsInput a where
-  readInput :: JSON.Value -> JSON.Result a
-  mkInputField :: Row.KnownSymbol l => Row.Label l -> proxy a -> InputField
+class
+  ( GraphQLType a
+  , GraphQLInputKind (KindOf a)
+  ) => GraphQLInputType a where
+  readInputType' :: MonadFail v => JSON.Value -> v a
 instance
   ( GraphQLType a
-  , InstanceOf t a
-  , GraphQLInputKind t
-  ) => IsInput a where
-  readInput = readInputType (typeOf @t @a)
-  mkInputField l _
-    = InputField
-      { name = Text.pack (show l)
-      , typeRep = TypeRep (typeOf @t @a)
-      }
+  , GraphQLInputKind (KindOf a)
+  ) => GraphQLInputType a where
+  readInputType' = readInputType typeOf_
 
-type ToInputFields a = Rec.NativeRow a
+parseInputFields :: forall r
+  .  Row.AllUniqueLabels r
+  => Row.Forall r GraphQLInputType
+  => JSON.Value
+  -> JSON.Parser (Rec r)
+parseInputFields (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType @JSON.Parser @r readField
+  where
+    readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> JSON.Parser a
+    readField lbl =
+      let
+        key = Text.pack (show lbl)
+        val = fromMaybe JSON.Null $ Map.lookup key obj
+      in readInputType' val <?> JSON.Key key
+parseInputFields actual = JSON.typeMismatch expected actual
+  where
+    lbls = Rec.labels @r @GraphQLInputType
+    expected = "{ " <> List.intercalate ", " lbls <> " }"
+
+readInputFields :: forall r v
+  .  MonadFail v
+  => Row.AllUniqueLabels r
+  => Row.Forall r GraphQLInputType
+  => JSON.Value
+  -> v (Rec r)
+readInputFields = liftJSONResult . JSON.parse parseInputFields

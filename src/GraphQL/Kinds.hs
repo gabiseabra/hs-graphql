@@ -1,27 +1,40 @@
-{-# LANGUAGE DataKinds, TypeFamilies, GADTs, StandaloneKindSignatures #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
-{-# LANGUAGE TypeApplications, ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE
+    DataKinds
+  , TypeFamilies
+  , GADTs
+  , StandaloneKindSignatures
+  , FlexibleContexts
+  , FlexibleInstances
+  , TypeApplications
+  , ScopedTypeVariables
+  , MultiParamTypeClasses
+  , UndecidableInstances
+  , TypeOperators
+  , InstanceSigs
+#-}
 
 module GraphQL.Kinds
   ( GraphQLScalar(..)
   , GraphQLObject(..)
+  , GraphQLInputObject(..)
   , Row
   ) where
 
-import GraphQL.Internal (mapRow)
+import GraphQL.Internal
 import GraphQL.Class
-import GraphQL.IO.Output
 import GraphQL.IO.Input
+import GraphQL.IO.Output
 
 import GHC.Exts (Constraint)
 
 import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
+import qualified Data.Aeson.Types as JSON
+import Data.Aeson.Types ((<?>))
 import qualified Data.HashMap.Strict as Map
+import qualified Data.List as List
 import Data.Maybe (fromMaybe)
+import Data.Row (Rec)
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
 import Data.String (IsString)
@@ -36,65 +49,57 @@ data GraphQLScalar a where
     , JSON.ToJSON a
     ) => GraphQLScalar a
 
-instance GraphQLKind GraphQLScalar where
-  type Kind GraphQLScalar = SCALAR
-  typeDef Scalar = ScalarDef
 instance
   ( JSON.FromJSON a
   , JSON.ToJSON a
   ) => GraphQLTypeable GraphQLScalar a where
   typeOf = Scalar
+instance GraphQLKind GraphQLScalar where type Kind GraphQLScalar = SCALAR
 instance GraphQLInputKind GraphQLScalar where
-  readInputType Scalar = JSON.fromJSON
+  readInputType Scalar = liftJSONResult . JSON.fromJSON
 instance GraphQLOutputKind m GraphQLScalar where
-  resolve Scalar = Leaf . JSON.toJSON
+  mkResolver Scalar = Leaf
 
 data GraphQLObject m r a where
   Object ::
     ( Rec.FromNative a
     , Rec.NativeRow a ~ r
     , Row.AllUniqueLabels r
-    , Row.Forall r (IsResolver m)
+    , Row.Forall r (GraphQLResolver m)
+    , Row.FreeForall r
     ) => GraphQLObject m r a
 
-instance GraphQLKind (GraphQLObject m r) where
-  type Kind (GraphQLObject m r) = OBJECT
-  typeDef Object = ObjectDef $ mapRow @(IsResolver m) @r mkField
 instance
   ( Rec.FromNative a
   , Rec.NativeRow a ~ r
   , Row.AllUniqueLabels r
-  , Row.Forall r (IsResolver m)
+  , Row.Forall r (GraphQLResolver m)
+  , Row.FreeForall r
   ) => GraphQLTypeable (GraphQLObject m r) a where
   typeOf = Object
+instance GraphQLKind (GraphQLObject m r) where type Kind (GraphQLObject m r) = OBJECT
 instance GraphQLOutputKind m (GraphQLObject m r) where
-  resolve Object = Branch . Rec.eraseWithLabels @(IsResolver m) @r mkResolver . Rec.fromNative
+  mkResolver :: forall a. GraphQLObject m r a -> Resolver BRANCH a (Field m a)
+  mkResolver Object
+    = Branch
+    $ eraseWithLabelsF @(GraphQLResolver m) @((->) a) @r (Field . fmap applyInput)
+    $ accessors @a
 
 data GraphQLInputObject r a where
   InputObject ::
     ( Rec.ToNative a
     , Rec.NativeRow a ~ r
     , Row.AllUniqueLabels r
-    , Row.Forall r IsInput
+    , Row.Forall r GraphQLInputType
+    , Row.FreeForall r
     ) => GraphQLInputObject r a
 
-instance GraphQLKind (GraphQLInputObject r) where
-  type Kind (GraphQLInputObject r) = INPUT_OBJECT
-  typeDef InputObject = InputObjectDef $ mapRow @IsInput @r mkInputField
 instance
   ( Rec.ToNative a
   , Rec.NativeRow a ~ r
   , Row.AllUniqueLabels r
-  , Row.Forall r IsInput
-  ) => GraphQLTypeable (GraphQLInputObject r) a where
-  typeOf = InputObject
-instance GraphQLInputKind (GraphQLInputObject r) where
-  readInputType InputObject (JSON.Object obj) = return . Rec.toNative =<< Rec.fromLabelsA @IsInput @JSON.Result @r readField
-    where
-      readField :: forall l a. (Row.KnownSymbol l, IsInput a) => Row.Label l -> JSON.Result a
-      readField l =
-        let
-          key = Text.pack (show l)
-          val = fromMaybe JSON.Null $ Map.lookup key obj
-        in readInput val
-  readInputType InputObject _ = JSON.Error "input value is not an object"
+  , Row.Forall r GraphQLInputType
+  , Row.FreeForall r
+  ) => GraphQLTypeable (GraphQLInputObject r) a where typeOf = InputObject
+instance GraphQLKind (GraphQLInputObject r) where type Kind (GraphQLInputObject r) = INPUT_OBJECT
+instance GraphQLInputKind (GraphQLInputObject r) where readInputType InputObject = pure . Rec.toNative <=< readInputFields

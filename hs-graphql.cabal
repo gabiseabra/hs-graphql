@@ -18,7 +18,6 @@ library
   exposed-modules:
     GraphQL.Class
     GraphQL.Internal
-    GraphQL.Kinds
     GraphQL.Types
     GraphQL.Selection
     GraphQL.Resolution
