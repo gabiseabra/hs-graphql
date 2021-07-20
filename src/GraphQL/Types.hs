@@ -39,10 +39,19 @@ instance GraphQLType Double where
   type KindOf Double = GraphQLScalar
   typename _ = "Float"
 
-instance GraphQLType [Char] where
-  type KindOf [Char] = GraphQLScalar
-  typename _ = "String"
+-- overlapping instance
+-- instance GraphQLType [Char] where
+--   type KindOf [Char] = GraphQLScalar
+--   typename _ = "String"
 
 instance GraphQLType Text where
   type KindOf Text = GraphQLScalar
   typename _ = "String"
+
+instance GraphQLType a => GraphQLType [a] where
+  type KindOf [a] = GraphQLList (KindOf a) []
+  typename _ = "List"
+
+instance GraphQLType a => GraphQLType (Maybe a) where
+  type KindOf (Maybe a) = GraphQLNullable (KindOf a) Maybe
+  typename _ = "Nullable"

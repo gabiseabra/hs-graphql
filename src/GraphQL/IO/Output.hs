@@ -82,7 +82,11 @@ class
   ) => GraphQLOutputKind (m :: * -> *) (t :: * -> *) where
   mkResolver :: t a -> Resolver (NodeTypeOf (Kind t)) a (Field m a)
 
-type GraphQLOutputType m a
-  = ( GraphQLType a
-    , GraphQLOutputKind m (KindOf a)
-    )
+class
+  ( GraphQLOutputKind m (KindOf a)
+  , GraphQLType a
+  ) => GraphQLOutputType m a
+instance
+  ( GraphQLOutputKind m (KindOf a)
+  , GraphQLType a
+  ) => GraphQLOutputType m a

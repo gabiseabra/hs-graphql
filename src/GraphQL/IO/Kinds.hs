@@ -17,8 +17,7 @@ type family k ?>> io where
   -- UNION        ?>> OUT = True
   OBJECT       ?>> OUT = True
   INPUT_OBJECT ?>> IN  = True
-  (LIST k)     ?>> io  = k ?>> io
-  (NULLABLE k) ?>> io  = k ?>> io
+  (k' k)      ?>> io  = k ?>> io
   k            ?>> io  = False
 
 type k !>> io = k ?>> io ~ True
