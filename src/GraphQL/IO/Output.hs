@@ -19,8 +19,11 @@ import GraphQL.IO.Kinds
 import GraphQL.IO.Input
 
 import qualified Data.Aeson as JSON
+import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Row as Row
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
 
 data NodeType = LEAF | BRANCH | WRAPPER NodeType
 
@@ -31,28 +34,15 @@ type family NodeTypeOf k where
   NodeTypeOf (LIST k) = WRAPPER (NodeTypeOf k)
   NodeTypeOf (NULLABLE k) = WRAPPER (NodeTypeOf k)
 
-data Resolver t a r where
-  Leaf :: JSON.ToJSON a => Resolver LEAF a r
-  Branch :: [(String, r)] -> Resolver BRANCH a r
+data Resolver t f a where
+  Leaf :: JSON.ToJSON a => Resolver LEAF f a
+  Branch :: HashMap Text (f a) -> Resolver BRANCH f a
   Wrap ::
     ( Traversable f
     , Functor f
     , JSON.ToJSON1 f
-    ) => Resolver t a r
-      -> Resolver (WRAPPER t) (f a) r
-
-instance Functor (Resolver t a) where
-  fmap f (Leaf) = Leaf
-  fmap f (Branch r) = Branch $ fmap (fmap f) r
-  fmap f (Wrap r) = Wrap $ fmap f r
-instance Foldable (Resolver t a) where
-  foldMap f (Leaf) = mempty
-  foldMap f (Branch r) = foldMap (\(k, v) -> f v) r
-  foldMap f (Wrap r) = foldMap f r
-instance Traversable (Resolver t a) where
-  traverse f (Leaf) = pure Leaf
-  traverse f (Branch r) = fmap Branch (traverse (traverse f) r)
-  traverse f (Wrap r) = fmap Wrap (traverse f r)
+    ) => Resolver t f' a
+      -> Resolver (WRAPPER t) f' (f a)
 
 data Field m a where
   Field ::
@@ -80,7 +70,7 @@ class
   ( GraphQLKind t
   , (Kind t) !>> OUT
   ) => GraphQLOutputKind (m :: * -> *) (t :: * -> *) where
-  mkResolver :: t a -> Resolver (NodeTypeOf (Kind t)) a (Field m a)
+  mkResolver :: t a -> Resolver (NodeTypeOf (Kind t)) (Field m) a
 
 class
   ( GraphQLOutputKind m (KindOf a)

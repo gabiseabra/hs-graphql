@@ -2,55 +2,66 @@
     DataKinds
   , TypeFamilies
   , GADTs
-  , MultiParamTypeClasses
-  , FunctionalDependencies
-  , FlexibleContexts
-  , FlexibleInstances
-  , UndecidableInstances
   , DuplicateRecordFields
   , NamedFieldPuns
   , RankNTypes
   , BlockArguments
+  , ScopedTypeVariables
+  , TypeApplications
 #-}
 
-module GraphQL.Resolution where
+module GraphQL.Resolution
+  ( resolve
+  ) where
 
 import GraphQL.Class
 import GraphQL.Selection
 import GraphQL.IO.Output
 import GraphQL.IO.Input
 
-import Control.Monad ((<=<), liftM, liftM2)
-import Data.Aeson (ToJSON)
+import Control.Monad ((>=>), (<=<))
 import qualified Data.Aeson as JSON
-import Data.Bifunctor (Bifunctor(..), bimap)
-import qualified Data.List as List
-import Data.Maybe (fromMaybe)
+import Data.Bifunctor (first)
 import Data.Functor.Base (TreeF(..))
-import Data.Functor.Foldable (Recursive (..), Corecursive (..), Base)
+import Data.Functor.Foldable (Recursive(..), Corecursive(..), Base)
+import qualified Data.List as List
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
+import Data.Maybe (fromMaybe)
+import Data.Proxy (Proxy(..))
+import Data.Text (Text)
+import qualified Data.Text as Text
 
-{-
-data ValidField m a where ValidField :: GraphQLOutputType m o => (a -> m o) -> ValidField m a
+data Step t m a where
+  Step :: GraphQLOutputType m o => (a -> m o) -> [t] -> Step t m a
 
-foldGQL :: forall a v m t
+resolve :: forall a v m t
   .  MonadFail v
+  => Monad m
   => Recursive t
   => Base t ~ TreeF Selection
   => GraphQLOutputType m a
   => [t]
   -> v (a -> m JSON.Value)
-foldGQL s = do
-  let
-    go :: forall f a. (ValidField m a, [t]) -> m (a -> m JSON.Value)
-    go (ValidField f, s') = pure . (\g -> f >=> g) =<< foldGQL s'
-    res = run (Proxy @a) :: Resolution a (R RAW m a)
-  res' <- mapM go =<< resolve s res
-  case res' of
-    Leaf -> pure (pure . JSON.toJSON)
-    (Wrap Leaf) -> pure (pure . JSON.toJSON1)
-    (Branch as) -> do
-      let fun = sequence2 (fmap sequence2 as) :: a -> m [(String, JSON.Value)]
-      pure (pure . JSON.Object . Map.fromList . fmap (first Text.pack) <=< fun)
+resolve = fun
+  where
+    go :: forall f a. Step t m a -> v (a -> m JSON.Value)
+    go (Step f s) = pure . (\g -> f >=> g) =<< fun s
+    fun :: forall a. GraphQLOutputType m a => [t] -> v (a -> m JSON.Value)
+    fun s = sequenceResolver go =<< validate s (mkResolver (typeOf_ @a))
+
+sequenceResolver
+  :: Monad m
+  => MonadFail v
+  => (forall a. f a -> v (a -> m JSON.Value))
+  -> Resolver k f a
+  -> v (a -> m JSON.Value)
+sequenceResolver _ Leaf = pure $ pure . JSON.toJSON
+-- TODO — if it's an branch wrapper, batch together all the same fields
+sequenceResolver f (Wrap r) = pure . g =<< sequenceResolver f r
+  where g f = pure . JSON.toJSON1 <=< traverse f
+sequenceResolver f (Branch as) = pure . g =<< mapM f as
+  where g as = pure . JSON.Object <=< sequence2 as
 
 sequence2 :: (Traversable t, Monad m, Monad f) => t (f (m a)) -> f (m (t a))
 sequence2 = fmap sequence . sequence
@@ -60,19 +71,23 @@ validate
   => Recursive t
   => Base t ~ TreeF Selection
   => [t]
-  -> Resolver a' (Field m a)
-  -> v (Resolver a' (ValidField m a, [t]))
+  -> Resolver k (Field m) a
+  -> v (Resolver k (Step t m) a)
 validate [] Leaf = pure Leaf
-validate s (Wrap r) = pure . Wrap =<< resolve s r
-validate s@(_:_) (Branch as) = pure . Branch =<< mapM (f . project) s
-  where f (NodeF (Sel k i) tail) = select k as >>= traverse ((flip apply) i) >>= \(k, r) -> pure (k, (r, tail))
+validate s (Wrap r) = pure . Wrap =<< validate s r
+validate s@(_:_) (Branch as) = pure . Branch . Map.fromList =<< mapM (f . project) s
+  where
+    f (NodeF (Sel { name, alias, input }) tail)
+      = select name as
+      >>= apply tail input
+      >>= \r -> pure (Text.pack $ fromMaybe name alias, r)
 validate _ _ = fail "Invalid selection"
 
-select :: String -> [(String, a)] -> V (String, a)
-select k as = case List.lookup k as of
+select :: MonadFail v => String -> HashMap Text a -> v a
+select k as = case Map.lookup (Text.pack k) as of
   Nothing -> fail $ "field " <> k <> " doesn't exist"
-  Just a -> pure (k, a)
+  Just a -> pure a
 
-apply :: MonadFail v => Field m a -> JSON.Object -> v (ValidField m a)
-apply (R f) = readInput >=> \i -> pure $ ValidField \a -> f a i
--}
+apply :: MonadFail v => [t] -> Input -> Field m a -> v (Step t m a)
+apply s i (Field f) = (\i -> pure $ Step (\a -> f a i) s) =<< readInput i
+

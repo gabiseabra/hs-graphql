@@ -64,15 +64,15 @@ class
   readInputType :: MonadFail v => t a -> JSON.Value -> v a
 
 class GraphQLInput a where
-  readInput :: MonadFail v => JSON.Value -> v a
+  readInput :: MonadFail v => Input -> v a
   default readInput
     :: MonadFail v
     => Rec.ToNative a
     => Rec.AllUniqueLabels (Rec.NativeRow a)
     => Rec.Forall (Rec.NativeRow a) GraphQLInputType
-    => JSON.Value
+    => Input
     -> v a
-  readInput = pure . Rec.toNative <=< readInputFields
+  readInput = pure . Rec.toNative <=< readInputFields . JSON.Object
 
 instance GraphQLInput () where readInput _ = pure ()
 

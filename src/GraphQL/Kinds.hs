@@ -82,9 +82,10 @@ instance
   ) => GraphQLTypeable (GraphQLObject m r) a where typeOf = Object
 instance GraphQLKind (GraphQLObject m r) where type Kind (GraphQLObject m r) = OBJECT
 instance GraphQLOutputKind m (GraphQLObject m r) where
-  mkResolver :: forall a. GraphQLObject m r a -> Resolver BRANCH a (Field m a)
+  mkResolver :: forall a. GraphQLObject m r a -> Resolver BRANCH (Field m) a
   mkResolver Object
     = Branch
+    $ Map.fromList
     $ eraseWithLabelsF @(GraphQLResolver m) @((->) a) @r (Field . fmap applyInput)
     $ accessors @a
 
@@ -106,14 +107,6 @@ instance
   ) => GraphQLTypeable (GraphQLInputObject r) a where typeOf = InputObject
 instance GraphQLKind (GraphQLInputObject r) where type Kind (GraphQLInputObject r) = INPUT_OBJECT
 instance GraphQLInputKind (GraphQLInputObject r) where readInputType InputObject = pure . Rec.toNative <=< readInputFields
-
-wrap :: forall f m a
-  .  Traversable f
-  => Applicative m
-  => (forall b. GraphQLOutputType m (f b))
-  => Field m a
-  -> Field m (f a)
-wrap (Field f) = Field (\as i -> traverse @f @m ((flip f) i) as)
 
 data GraphQLList t f a where
   List ::
@@ -142,7 +135,7 @@ instance
   , GraphQLOutputKind m t
   , forall a. GraphQLOutputType m (f a)
   ) => GraphQLOutputKind m (GraphQLList t f) where
-  mkResolver (List t) = Wrap (fmap wrap (mkResolver @m @t t))
+  mkResolver (List t) = Wrap (mkResolver @m @t t)
 
 data GraphQLNullable t f a where
   Nullable ::
@@ -169,4 +162,4 @@ instance
   , GraphQLOutputKind m t
   , forall a. GraphQLOutputType m (f a)
   ) => GraphQLOutputKind m (GraphQLNullable t f) where
-  mkResolver (Nullable t) = Wrap (fmap wrap (mkResolver @m @t t))
+  mkResolver (Nullable t) = Wrap (mkResolver @m @t t)
