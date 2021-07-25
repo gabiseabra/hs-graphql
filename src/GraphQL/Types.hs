@@ -53,6 +53,10 @@ instance GraphQLType Text where
   type KindOf Text = GraphQLScalar
   typename _ = "String"
 
+instance GraphQLType Char where
+  type KindOf Char = GraphQLScalar
+  typename _ = "String"
+
 instance GraphQLType a => GraphQLType (Maybe a) where
   type KindOf (Maybe a) = GraphQLNullable (KindOf a)
   typename _ = "Nullable"

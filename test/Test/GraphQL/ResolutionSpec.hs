@@ -30,7 +30,7 @@ import Data.Text (Text)
 data A m
   = A
     { a0 :: () -> m Int
-    , a1 :: () -> m Text
+    , a1 :: () -> m (Maybe String)
     , as :: () -> m [A m]
     } deriving (Generic)
 
@@ -40,7 +40,7 @@ instance Applicative m => GraphQLType (A m) where
 
 a :: A IO
 a = A { a0 = \_ -> pure 420
-      , a1 = \_ -> pure "lmao"
+      , a1 = \_ -> pure Nothing
       , as = \_ -> pure [a, a, a]
       }
 
@@ -60,9 +60,9 @@ spec = describe "GraphQL.Resolution" $ do
       o = object
             [ "a0" .= (420 :: Int)
             , "as" .=
-                [ object [ "a1" .= ("lmao" :: String) ]
-                , object [ "a1" .= ("lmao" :: String) ]
-                , object [ "a1" .= ("lmao" :: String) ]
+                [ object [ "a1" .= (Nothing :: Maybe String) ]
+                , object [ "a1" .= (Nothing :: Maybe String) ]
+                , object [ "a1" .= (Nothing :: Maybe String) ]
                 ]
             ]
     run (resolve s) a `shouldReturn` o
