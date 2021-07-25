@@ -11,7 +11,6 @@
   , UndecidableInstances
   , TypeOperators
   , InstanceSigs
-  , QuantifiedConstraints
 #-}
 
 module GraphQL.Kinds
@@ -35,21 +34,17 @@ import GHC.TypeLits (Symbol)
 import Control.Applicative (Alternative(..))
 import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import qualified Data.Aeson.Types as JSON
-import Data.Aeson.Types ((<?>))
 import qualified Data.HashMap.Strict as Map
-import qualified Data.List as List
 import Data.Maybe (fromMaybe)
 import Data.Row (Rec, type (.!))
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
-import qualified Data.Text as Text
 import Data.Text (Text)
 
 type Row a = Rec.NativeRow a
 
 data GraphQLScalar a where
-  Scalar ::
+  ScalarT ::
     ( JSON.FromJSON a
     , JSON.ToJSON a
     ) => GraphQLScalar a
@@ -58,15 +53,15 @@ instance
   ( JSON.FromJSON a
   , JSON.ToJSON a
   ) => GraphQLTypeable GraphQLScalar a where
-  typeOf = Scalar
+  typeOf = ScalarT
 instance GraphQLKind GraphQLScalar where type Kind GraphQLScalar = SCALAR
 instance GraphQLInputKind GraphQLScalar where
-  readInputType Scalar = liftJSONResult . JSON.fromJSON
+  readInputType ScalarT = liftJSONResult . JSON.fromJSON
 instance GraphQLOutputKind m GraphQLScalar where
-  mkResolver Scalar = Leaf
+  mkResolver ScalarT = Leaf
 
 data GraphQLObject m a where
-  Object ::
+  ObjectT ::
     ( Rec.FromNative a
     , Row.AllUniqueLabels (Rec.NativeRow a)
     , Row.Forall (Rec.NativeRow a) (GraphQLResolver m)
@@ -78,11 +73,11 @@ instance
   , Row.AllUniqueLabels (Rec.NativeRow a)
   , Row.Forall (Rec.NativeRow a) (GraphQLResolver m)
   , Row.FreeForall (Rec.NativeRow a)
-  ) => GraphQLTypeable (GraphQLObject m) a where typeOf = Object
+  ) => GraphQLTypeable (GraphQLObject m) a where typeOf = ObjectT
 instance GraphQLKind (GraphQLObject m) where type Kind (GraphQLObject m) = OBJECT
 instance GraphQLOutputKind m (GraphQLObject m) where
   mkResolver :: forall a. GraphQLObject m a -> Resolver BRANCH (Field m) a
-  mkResolver Object
+  mkResolver ObjectT
     = Branch
     $ Map.fromList
     $ eraseWithLabelsF
@@ -93,7 +88,7 @@ instance GraphQLOutputKind m (GraphQLObject m) where
     $ accessors @a
 
 data GraphQLInputObject a where
-  InputObject ::
+  InputObjectT ::
     ( Rec.ToNative a
     , Row.AllUniqueLabels (Rec.NativeRow a)
     , Row.Forall (Rec.NativeRow a) GraphQLInputType
@@ -105,12 +100,12 @@ instance
   , Row.AllUniqueLabels (Rec.NativeRow a)
   , Row.Forall (Rec.NativeRow a) GraphQLInputType
   , Row.FreeForall (Rec.NativeRow a)
-  ) => GraphQLTypeable GraphQLInputObject a where typeOf = InputObject
+  ) => GraphQLTypeable GraphQLInputObject a where typeOf = InputObjectT
 instance GraphQLKind GraphQLInputObject where type Kind GraphQLInputObject = INPUT_OBJECT
-instance GraphQLInputKind GraphQLInputObject where readInputType InputObject = pure . Rec.toNative <=< readInputFields
+instance GraphQLInputKind GraphQLInputObject where readInputType InputObjectT = pure . Rec.toNative <=< readInputFields
 
 data GraphQLList t a where
-  List ::
+  ListT ::
     ( Functor f
     , Traversable f
     , Applicative f
@@ -126,19 +121,19 @@ instance
   , Monoid (f a)
   , JSON.ToJSON1 f
   , GraphQLTypeable t a
-  ) => GraphQLTypeable (GraphQLList t) (f a) where typeOf = List typeOf
+  ) => GraphQLTypeable (GraphQLList t) (f a) where typeOf = ListT typeOf
 instance GraphQLKind t => GraphQLKind (GraphQLList t) where type Kind (GraphQLList t) = LIST (Kind t)
 instance GraphQLInputKind t => GraphQLInputKind (GraphQLList t) where
-  readInputType (List t) (JSON.Array array) = pure . foldMap pure =<< traverse (readInputType t) array
+  readInputType (ListT t) (JSON.Array array) = pure . foldMap pure =<< traverse (readInputType t) array
   readInputType _ _ = Left "Expected an array"
 instance
   ( Applicative m
   , GraphQLOutputKind m t
   ) => GraphQLOutputKind m (GraphQLList t) where
-  mkResolver (List t) = Wrap (mkResolver @m @t t)
+  mkResolver (ListT t) = Wrap (mkResolver @m @t t)
 
 data GraphQLNullable t a where
-  Nullable ::
+  NullableT ::
     ( Functor f
     , Traversable f
     , Alternative f
@@ -152,16 +147,16 @@ instance
   , Alternative f
   , JSON.ToJSON1 f
   , GraphQLTypeable t a
-  ) => GraphQLTypeable (GraphQLNullable t) (f a) where typeOf = Nullable typeOf
+  ) => GraphQLTypeable (GraphQLNullable t) (f a) where typeOf = NullableT typeOf
 instance GraphQLKind t => GraphQLKind (GraphQLNullable t) where type Kind (GraphQLNullable t) = NULLABLE (Kind t)
 instance GraphQLInputKind t => GraphQLInputKind (GraphQLNullable t) where
-  readInputType (Nullable _) JSON.Null = pure empty
-  readInputType (Nullable t) v = fmap pure (readInputType t v)
+  readInputType (NullableT _) JSON.Null = pure empty
+  readInputType (NullableT t) v = fmap pure (readInputType t v)
 instance
   ( Applicative m
   , GraphQLOutputKind m t
   ) => GraphQLOutputKind m (GraphQLNullable t) where
-  mkResolver (Nullable t) = Wrap (mkResolver @m @t t)
+  mkResolver (NullableT t) = Wrap (mkResolver @m @t t)
 
 data GraphQLVariant k r a where
   VarT ::

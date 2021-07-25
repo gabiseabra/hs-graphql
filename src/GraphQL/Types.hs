@@ -1,12 +1,11 @@
 {-# LANGUAGE
     TypeFamilies
   , DataKinds
-  , FlexibleInstances
   , OverloadedStrings
   , GeneralizedNewtypeDeriving
   , TypeApplications
   , ScopedTypeVariables
-  , FlexibleContexts
+  , UndecidableInstances
   , TypeOperators
 #-}
 
