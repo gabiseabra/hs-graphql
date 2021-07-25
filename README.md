@@ -52,6 +52,7 @@ instance GraphQLOutputKind m GraphQLScalar where
 - [x] validation
 - [x] resolvers
   - [x] resolve objects recursively
+  - [ ] batching
   - [ ] apply inputs
   - [ ] error handling
 - [ ] root resolver
