@@ -35,7 +35,7 @@ data A m
     } deriving (Generic)
 
 instance Applicative m => GraphQLType (A m) where
-  type KindOf (A m) = GraphQLObject m (Row (A m))
+  type KindOf (A m) = GraphQLObject m
   typename _ = "A"
 
 a :: A IO

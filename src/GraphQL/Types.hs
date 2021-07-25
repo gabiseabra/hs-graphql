@@ -7,7 +7,6 @@
   , TypeApplications
   , ScopedTypeVariables
   , FlexibleContexts
-  , UndecidableInstances
   , TypeOperators
 #-}
 
@@ -56,7 +55,7 @@ instance GraphQLType Text where
   typename _ = "String"
 
 instance GraphQLType a => GraphQLType (Maybe a) where
-  type KindOf (Maybe a) = GraphQLNullable (KindOf a) Maybe
+  type KindOf (Maybe a) = GraphQLNullable (KindOf a)
   typename _ = "Nullable"
 
 type family StringOrListK a where
@@ -65,14 +64,14 @@ type family StringOrListK a where
 
 type StringOrList t
   =  "String" .== GraphQLScalar
-  .+ "List"   .== GraphQLList t []
+  .+ "List"   .== GraphQLList t
 
 instance
   ( StringOrListK [a] ~ sym
   , KnownSymbol sym
   , GraphQLType a
-  , GraphQLKind (sym .@ (StringOrList (KindOf a)))
-  , GraphQLTypeable (sym .@ (StringOrList (KindOf a))) [a]
+  , GraphQLKind (sym .@ StringOrList (KindOf a))
+  , GraphQLTypeable (sym .@ StringOrList (KindOf a)) [a]
   ) => GraphQLType [a] where
-  type KindOf [a] = ((StringOrListK [a]) .@ (StringOrList (KindOf a)))
+  type KindOf [a] = (StringOrListK [a] .@ StringOrList (KindOf a))
   typename _ = Text.pack $ symbolVal (Proxy @sym)
