@@ -20,7 +20,7 @@ module GraphQL.Kinds
   , GraphQLInputObject
   , GraphQLList
   , GraphQLNullable
-  , GraphQLListOrString
+  , type (.@)
   , Row
   ) where
 
@@ -30,6 +30,7 @@ import GraphQL.IO.Input
 import GraphQL.IO.Output
 
 import GHC.Exts (Constraint)
+import GHC.TypeLits (Symbol)
 
 import Control.Applicative (Alternative(..))
 import Control.Monad ((<=<))
@@ -39,10 +40,9 @@ import Data.Aeson.Types ((<?>))
 import qualified Data.HashMap.Strict as Map
 import qualified Data.List as List
 import Data.Maybe (fromMaybe)
-import Data.Row (Rec)
+import Data.Row (Rec, type (.!))
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
-import Data.String (IsString)
 import qualified Data.Text as Text
 import Data.Text (Text)
 
@@ -163,19 +163,29 @@ instance
   ) => GraphQLOutputKind m (GraphQLNullable t f) where
   mkResolver (Nullable t) = Wrap (mkResolver @m @t t)
 
+data GraphQLVariant k r a where
+  VarT ::
+    ( Row.HasType k t r
+    , GraphQLKind t
+    ) => t a -> GraphQLVariant k r a
 
-data GraphQLListOrString isString t a where
-  StringT :: GraphQLScalar a -> GraphQLListOrString True t a
-  ListT :: GraphQLList t [] a -> GraphQLListOrString False t a
+type (.@) :: Symbol -> Row.Row (* -> *) -> (* -> *)
+type (.@) k r = GraphQLVariant k r
 
-instance GraphQLTypeable (GraphQLListOrString True t) String where typeOf = StringT Scalar
-instance GraphQLTypeable t a => GraphQLTypeable (GraphQLListOrString False t) [a] where typeOf = ListT (List typeOf)
-instance GraphQLKind (GraphQLListOrString True t) where type Kind (GraphQLListOrString True t) = SCALAR
-instance GraphQLKind t => GraphQLKind (GraphQLListOrString False t) where type Kind (GraphQLListOrString False t) = LIST (Kind t)
-instance GraphQLInputKind (GraphQLListOrString True t) where readInputType (StringT t) = readInputType t
-instance GraphQLInputKind t => GraphQLInputKind (GraphQLListOrString False t) where readInputType (ListT (List t)) = readInputType (List t)
-instance GraphQLOutputKind m (GraphQLListOrString True t) where mkResolver (StringT t) = mkResolver t
 instance
-  ( Applicative m
+  ( Row.HasType k t r
+  , GraphQLKind t
+  , GraphQLTypeable t a
+  ) => GraphQLTypeable (GraphQLVariant k r) a where typeOf = VarT (typeOf @t @a)
+instance
+  ( Row.HasType k t r
+  , GraphQLKind t
+  ) => GraphQLKind (GraphQLVariant k r) where type Kind (GraphQLVariant k r) = Kind (r .! k)
+instance
+  ( Row.HasType k t r
+  , GraphQLInputKind t
+  ) => GraphQLInputKind (GraphQLVariant k r) where readInputType (VarT t) = readInputType t
+instance
+  ( Row.HasType k t r
   , GraphQLOutputKind m t
-  ) => GraphQLOutputKind m (GraphQLListOrString False t) where mkResolver (ListT (List t)) = mkResolver (List t)
+  ) => GraphQLOutputKind m (GraphQLVariant k r) where mkResolver (VarT t) = mkResolver t

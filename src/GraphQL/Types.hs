@@ -8,22 +8,22 @@
   , ScopedTypeVariables
   , FlexibleContexts
   , UndecidableInstances
-  , MultiParamTypeClasses
-  , QuantifiedConstraints
-  , TypeFamilyDependencies
+  , TypeOperators
 #-}
 
 module GraphQL.Types where
 
 import GraphQL.Class
 import GraphQL.Kinds
-import GraphQL.IO.Output
-import GraphQL.IO.Input
+
+import GHC.TypeLits (KnownSymbol, symbolVal)
 
 import qualified Data.Aeson as JSON
-import Data.Text (Text)
-import Data.Void (Void)
 import Data.Proxy (Proxy(..))
+import Data.Row (type (.+), type (.==))
+import Data.Void (Void)
+import Data.Text (Text)
+import qualified Data.Text as Text
 
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
 
@@ -59,15 +59,20 @@ instance GraphQLType a => GraphQLType (Maybe a) where
   type KindOf (Maybe a) = GraphQLNullable (KindOf a) Maybe
   typename _ = "Nullable"
 
-type family IsString a where
-  IsString String = True
-  IsString a      = False
+type family StringOrListK a where
+  StringOrListK String = "String"
+  StringOrListK a      = "List"
+
+type StringOrList t
+  =  "String" .== GraphQLScalar
+  .+ "List"   .== GraphQLList t []
 
 instance
-  ( GraphQLListOrString (IsString [a]) (KindOf a) ~ t
+  ( StringOrListK [a] ~ sym
+  , KnownSymbol sym
   , GraphQLType a
-  , GraphQLKind t
-  , GraphQLTypeable t [a]
+  , GraphQLKind (sym .@ (StringOrList (KindOf a)))
+  , GraphQLTypeable (sym .@ (StringOrList (KindOf a))) [a]
   ) => GraphQLType [a] where
-  type KindOf [a] = GraphQLListOrString (IsString [a]) (KindOf a)
-  typename _ = "Lmao"
+  type KindOf [a] = ((StringOrListK [a]) .@ (StringOrList (KindOf a)))
+  typename _ = Text.pack $ symbolVal (Proxy @sym)
