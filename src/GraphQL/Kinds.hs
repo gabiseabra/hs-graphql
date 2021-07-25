@@ -20,6 +20,7 @@ module GraphQL.Kinds
   , GraphQLInputObject
   , GraphQLList
   , GraphQLNullable
+  , GraphQLListOrString
   , Row
   ) where
 
@@ -129,11 +130,10 @@ instance
 instance GraphQLKind t => GraphQLKind (GraphQLList t f) where type Kind (GraphQLList t f) = LIST (Kind t)
 instance GraphQLInputKind t => GraphQLInputKind (GraphQLList t f) where
   readInputType (List t) (JSON.Array array) = pure . foldMap pure =<< traverse (readInputType t) array
-  readInputType _ _ = fail "Expected an array"
+  readInputType _ _ = Left "Expected an array"
 instance
   ( Applicative m
   , GraphQLOutputKind m t
-  , forall a. GraphQLOutputType m (f a)
   ) => GraphQLOutputKind m (GraphQLList t f) where
   mkResolver (List t) = Wrap (mkResolver @m @t t)
 
@@ -160,6 +160,22 @@ instance GraphQLInputKind t => GraphQLInputKind (GraphQLNullable t f) where
 instance
   ( Applicative m
   , GraphQLOutputKind m t
-  , forall a. GraphQLOutputType m (f a)
   ) => GraphQLOutputKind m (GraphQLNullable t f) where
   mkResolver (Nullable t) = Wrap (mkResolver @m @t t)
+
+
+data GraphQLListOrString isString t a where
+  StringT :: GraphQLScalar a -> GraphQLListOrString True t a
+  ListT :: GraphQLList t [] a -> GraphQLListOrString False t a
+
+instance GraphQLTypeable (GraphQLListOrString True t) String where typeOf = StringT Scalar
+instance GraphQLTypeable t a => GraphQLTypeable (GraphQLListOrString False t) [a] where typeOf = ListT (List typeOf)
+instance GraphQLKind (GraphQLListOrString True t) where type Kind (GraphQLListOrString True t) = SCALAR
+instance GraphQLKind t => GraphQLKind (GraphQLListOrString False t) where type Kind (GraphQLListOrString False t) = LIST (Kind t)
+instance GraphQLInputKind (GraphQLListOrString True t) where readInputType (StringT t) = readInputType t
+instance GraphQLInputKind t => GraphQLInputKind (GraphQLListOrString False t) where readInputType (ListT (List t)) = readInputType (List t)
+instance GraphQLOutputKind m (GraphQLListOrString True t) where mkResolver (StringT t) = mkResolver t
+instance
+  ( Applicative m
+  , GraphQLOutputKind m t
+  ) => GraphQLOutputKind m (GraphQLListOrString False t) where mkResolver (ListT (List t)) = mkResolver (List t)

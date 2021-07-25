@@ -1,10 +1,12 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE
+    TypeFamilies
+  , BlockArguments
+  , UndecidableInstances
+  , DeriveGeneric
+  , OverloadedStrings
+  , TypeApplications
+  , FlexibleContexts
+#-}
 
 module Test.GraphQL.ResolutionSpec where
 
@@ -23,33 +25,44 @@ import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
 import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF(..))
+import Data.Text (Text)
 
 data A m
   = A
     { a0 :: () -> m Int
-    , a1 :: () -> m (A m)
+    , a1 :: () -> m Text
+    , as :: () -> m [A m]
     } deriving (Generic)
 
-instance GraphQLType (A m) where
+instance Applicative m => GraphQLType (A m) where
   type KindOf (A m) = GraphQLObject m (Row (A m))
   typename _ = "A"
 
 a :: A IO
-a = A { a0 = \_ -> pure 1, a1 = \_ -> pure a }
+a = A { a0 = \_ -> pure 420
+      , a1 = \_ -> pure "lmao"
+      , as = \_ -> pure [a, a, a]
+      }
 
 sel n r = Fix (NodeF s r)
   where
-    s = Sel { name = n, alias = Nothing, variables = [], typeConstraint = Nothing }
+    s = Sel { name = n, alias = Nothing, typeConstraint = Nothing }
 
-testResolver r = pure . foldResolution <=< unfoldResolution @(Fix (ResolutionF JSON.Value)) r
+run :: MonadFail m => Either String (a -> m b) -> a -> m b
+run (Left e) _ = fail e
+run (Right f) a = f a
 
 spec :: Spec
 spec = describe "GraphQL.Resolution" $ do
   it "works" $ do
     let
-      s = [sel "a0" [], sel "a1" [sel "a0" []]]
+      s = [sel "a0" [], sel "as" [sel "a1" []]]
       o = object
-            [ "a0" .= (1 :: Int)
-            , "a1" .= object [ "a0" .= (1 :: Int) ]
+            [ "a0" .= (420 :: Int)
+            , "as" .=
+                [ object [ "a1" .= ("lmao" :: String) ]
+                , object [ "a1" .= ("lmao" :: String) ]
+                , object [ "a1" .= ("lmao" :: String) ]
+                ]
             ]
-    testResolver a s `shouldReturn` o
+    run (resolve s) a `shouldReturn` o

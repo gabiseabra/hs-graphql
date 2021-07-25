@@ -61,17 +61,16 @@ class
   ( GraphQLKind t
   , (Kind t) !>> IN
   ) => GraphQLInputKind (t :: * -> *) where
-  readInputType :: MonadFail v => t a -> JSON.Value -> v a
+  readInputType :: t a -> JSON.Value -> V a
 
 class GraphQLInput a where
-  readInput :: MonadFail v => Input -> v a
+  readInput :: Input -> V a
   default readInput
-    :: MonadFail v
-    => Rec.ToNative a
+    :: Rec.ToNative a
     => Rec.AllUniqueLabels (Rec.NativeRow a)
     => Rec.Forall (Rec.NativeRow a) GraphQLInputType
     => Input
-    -> v a
+    -> V a
   readInput = pure . Rec.toNative <=< readInputFields . JSON.Object
 
 instance GraphQLInput () where readInput _ = pure ()
@@ -80,35 +79,24 @@ class
   ( GraphQLType a
   , GraphQLInputKind (KindOf a)
   ) => GraphQLInputType a where
-  readInputType' :: MonadFail v => JSON.Value -> v a
+  readInputType' :: JSON.Value -> V a
 instance
   ( GraphQLType a
   , GraphQLInputKind (KindOf a)
   ) => GraphQLInputType a where
   readInputType' = readInputType typeOf_
 
-parseInputFields :: forall r
+readInputFields :: forall r
   .  Row.AllUniqueLabels r
   => Row.Forall r GraphQLInputType
   => JSON.Value
-  -> JSON.Parser (Rec r)
-parseInputFields (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType @JSON.Parser @r readField
+  -> V (Rec r)
+readInputFields (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
   where
-    readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> JSON.Parser a
+    readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> V a
     readField lbl =
       let
         key = Text.pack (show lbl)
         val = fromMaybe JSON.Null $ Map.lookup key obj
-      in readInputType' val <?> JSON.Key key
-parseInputFields actual = JSON.typeMismatch expected actual
-  where
-    lbls = Rec.labels @r @GraphQLInputType
-    expected = "{ " <> List.intercalate ", " lbls <> " }"
-
-readInputFields :: forall r v
-  .  MonadFail v
-  => Row.AllUniqueLabels r
-  => Row.Forall r GraphQLInputType
-  => JSON.Value
-  -> v (Rec r)
-readInputFields = liftJSONResult . JSON.parse parseInputFields
+      in readInputType' val
+readInputFields actual = Left "expected an object"

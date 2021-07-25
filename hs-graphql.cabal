@@ -18,6 +18,7 @@ library
   exposed-modules:
     GraphQL.Class
     GraphQL.Internal
+    GraphQL.Kinds
     GraphQL.Types
     GraphQL.Selection
     GraphQL.Resolution
@@ -51,6 +52,7 @@ test-suite hs-graphql-test
     , aeson
     , data-fix
     , recursion-schemes
+    , text
 
 source-repository head
   type:     git

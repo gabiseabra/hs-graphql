@@ -17,6 +17,8 @@ import Data.Row.Records (Rec)
 import qualified Data.Row.Records as Rec
 import Data.String (IsString)
 
+type V a = Either String a
+
 mapRow :: forall c r b
   .  Row.Forall r c
   => Row.AllUniqueLabels r
@@ -45,6 +47,6 @@ eraseWithLabelsF f
   . Rec.sequence' @(Const [b]) @r @c
   . Rec.transform @c @r @f @(Const [b]) (Const . pure . f)
 
-liftJSONResult :: MonadFail m => JSON.Result a -> m a
-liftJSONResult (JSON.Error e) = fail e
-liftJSONResult (JSON.Success a) = pure a
+liftJSONResult :: JSON.Result a -> V a
+liftJSONResult (JSON.Error e) = Left e
+liftJSONResult (JSON.Success a) = Right a
