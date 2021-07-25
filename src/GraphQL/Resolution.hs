@@ -78,12 +78,12 @@ validate s@(_:_) (Branch as) = pure . Branch . Map.fromList =<< mapM (f . projec
     f (NodeF (Sel { name, alias, input }) tail)
       = select name as
       >>= apply tail input
-      >>= \r -> pure (Text.pack $ fromMaybe name alias, r)
+      >>= \r -> pure (fromMaybe name alias, r)
 validate _ _ = Left "Invalid selection"
 
-select :: String -> HashMap Text a -> V a
-select k as = case Map.lookup (Text.pack k) as of
-  Nothing -> Left $ "field " <> k <> " doesn't exist"
+select :: Text -> HashMap Text a -> V a
+select k as = case Map.lookup k as of
+  Nothing -> Left $ "field " <> Text.unpack k <> " doesn't exist"
   Just a -> Right a
 
 apply :: [t] -> Input -> Field m a -> V (Step t m a)
