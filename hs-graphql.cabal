@@ -44,10 +44,10 @@ test-suite hs-graphql-test
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   hs-source-dirs:      test
   main-is:             Spec.hs
+  build-tool-depends:  hspec-discover:hspec-discover
   build-depends:
       base >= 4.7 && < 5
     , hspec
-    , hspec-discover
     , hs-graphql
     , aeson
     , data-fix
