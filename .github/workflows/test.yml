@@ -4,13 +4,13 @@ on: [push, pull_request]
 
 jobs:
   test:
-    name: HSpec — ${{ matrix.os }}
+    name: HSpec — ${{ matrix.os }} / GHC ${{ matrix.ghc }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os: [ubuntu-latest, macOS-latest]
         cabal: ["3.2"]
-        ghc: ["8.6.5", "8.8.3", "8.10.1"]
+        ghc: ["8.10"]
     env:
       CONFIG: "--enable-tests --enable-benchmarks"
     steps:
