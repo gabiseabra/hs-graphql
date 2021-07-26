@@ -98,12 +98,12 @@ spec = describe "Example.InputSpec" $ do
               ]
             ]
     exec s a' `shouldReturn` o
-  it "fails on invalid input values" $ do
+  it "fails with invalid input values" $ do
     let
       i = object [ "i1_0" .= ("lmao" :: String) ]
       s = [ sel "a3" i &: [ sel_ "a0" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered String"
-  it "fails on missing input fields" $ do
+  it "fails with missing input fields" $ do
     let
       s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered Null"

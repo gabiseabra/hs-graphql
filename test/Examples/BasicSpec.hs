@@ -2,6 +2,7 @@
     TypeFamilies
   , DeriveGeneric
   , OverloadedStrings
+  , TypeApplications
 #-}
 
 module Examples.BasicSpec where
@@ -39,7 +40,7 @@ a = A { a0 = \_ -> pure 420
 
 spec :: Spec
 spec = describe "Example.BasicSpec" $ do
-  it "works" $ do
+  it "resolves objects" $ do
     let
       s = [ sel_ "a0" &: []
           , sel_ "a2" &: [ sel_ "a1" `as` "eyy" &: [] ]
@@ -53,3 +54,10 @@ spec = describe "Example.BasicSpec" $ do
                 ]
             ]
     exec s a `shouldReturn` o
+  it "fails with empty selection on objects" $ do
+    eval @(A IO) [] `shouldBe` Left "Invalid selection"
+  it "fails with non-empty selection on scalars" $ do
+    let
+      s = [ sel_ "a0" &: [ sel_ "??" &: [] ]
+          ]
+    eval @(A IO) s `shouldBe` Left "Invalid selection"
