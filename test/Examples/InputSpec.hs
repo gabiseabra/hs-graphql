@@ -73,7 +73,7 @@ a (Input1 { i1_0, i1_1 })
 a' = a (Input1 { i1_0 = 420, i1_1 = Nothing })
 
 spec :: Spec
-spec = describe "Example.InputSpec" $ do
+spec = describe "Examples.InputSpec" $ do
   it "parses valid input" $ do
     let
       i = object

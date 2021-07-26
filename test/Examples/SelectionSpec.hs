@@ -5,7 +5,7 @@
   , TypeApplications
 #-}
 
-module Examples.BasicSpec where
+module Examples.SelectionSpec where
 
 import Test.Hspec
 import Test.Utils
@@ -39,8 +39,8 @@ a = A { a0 = \_ -> pure 420
       }
 
 spec :: Spec
-spec = describe "Example.BasicSpec" $ do
-  it "resolves objects" $ do
+spec = describe "Examples.SelectionSpec" $ do
+  it "resoles selected fields" $ do
     let
       s = [ sel_ "a0" &: []
           , sel_ "a2" &: [ sel_ "a1" `as` "eyy" &: [] ]
@@ -58,6 +58,5 @@ spec = describe "Example.BasicSpec" $ do
     eval @(A IO) [] `shouldBe` Left "Invalid selection"
   it "fails with non-empty selection on scalars" $ do
     let
-      s = [ sel_ "a0" &: [ sel_ "??" &: [] ]
-          ]
+      s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "Invalid selection"
