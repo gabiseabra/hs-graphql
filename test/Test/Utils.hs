@@ -27,11 +27,11 @@ type STree = Fix (TreeF Selection)
 (&:) :: Selection -> [STree] -> STree
 (&:) s r = Fix (NodeF s r)
 
-sel :: Text -> Input -> Selection
-sel n i = Sel { name = n, input = i, alias = Nothing }
+sel :: Text -> JSON.Value -> Selection
+sel n (JSON.Object i) = Sel { name = n, input = i, alias = Nothing }
 
 sel_ :: Text -> Selection
-sel_ n = sel n mempty
+sel_ n = sel n (JSON.Object mempty)
 
 as :: Selection -> Text -> Selection
 as (Sel { name, input }) a = Sel { name = name, input = input, alias = Just a }

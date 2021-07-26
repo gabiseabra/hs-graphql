@@ -12,8 +12,6 @@ import Test.Utils
 import GHC.Generics (Generic)
 
 import GraphQL.Class (GraphQLType(..))
-import GraphQL.Selection
-import GraphQL.Resolution
 import GraphQL.Kinds
 import GraphQL.Types
 
@@ -40,7 +38,7 @@ a = A { a0 = \_ -> pure 420
       }
 
 spec :: Spec
-spec = describe "Example.Basic" $ do
+spec = describe "Example.BasicSpec" $ do
   it "works" $ do
     let
       s = [ sel_ "a0" &: []

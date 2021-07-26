@@ -43,7 +43,7 @@ instance GraphQLOutputKind m GraphQLScalar where
   - [x] scalars
   - [ ] enums
   - [x] objects
-  - [ ] input objects
+  - [x] input objects
   - [ ] unions
   - [ ] interfaces
   - [x] lists
@@ -53,7 +53,7 @@ instance GraphQLOutputKind m GraphQLScalar where
 - [x] resolvers
   - [x] resolve objects recursively
   - [ ] batching
-  - [ ] apply inputs
+  - [x] apply inputs
   - [ ] error handling
 - [ ] root resolver
   - [ ] map operation types to their respective resolvers
