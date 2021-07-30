@@ -29,28 +29,28 @@ import Data.Text (Text)
 type Typename = Text
 
 data TypeKind
-  = SCALAR
-  | ENUM
-  | OBJECT
-  | INPUT_OBJECT
-  | UNION
-  | LIST TypeKind
-  | NULLABLE TypeKind
+  = GQL_SCALAR
+  | GQL_ENUM
+  | GQL_OBJECT
+  | GQL_INPUT_OBJECT
+  | GQL_UNION
+  | GQL_LIST TypeKind
+  | GQL_NULLABLE TypeKind
 
 data TypeIO = IN | OUT
 
 type family k ?>> io where
-  SCALAR       ?>> io  = True
-  ENUM         ?>> io  = True
-  UNION        ?>> OUT = True
-  OBJECT       ?>> OUT = True
-  INPUT_OBJECT ?>> IN  = True
-  (k' k)       ?>> io  = k ?>> io
-  k            ?>> io  = False
+  GQL_SCALAR       ?>> io  = True
+  GQL_ENUM         ?>> io  = True
+  GQL_UNION        ?>> OUT = True
+  GQL_OBJECT       ?>> OUT = True
+  GQL_INPUT_OBJECT ?>> IN  = True
+  (k' k)           ?>> io  = k ?>> io
+  k                ?>> io  = False
 
 type k !>> io = k ?>> io ~ True
 
-class GraphQLKind (t :: * -> *) where type Kind t :: TypeKind
+class GraphQLKind (t :: * -> *) where type KIND t :: TypeKind
 
 class GraphQLTypeable t a where typeOf :: t a
 

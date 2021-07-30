@@ -59,7 +59,7 @@ resolveVariables vars input = Map.fromList (map (fmap enc) vars)
 -- | A GraphQL type that is allowed in inputs
 class
   ( GraphQLKind t
-  , (Kind t) !>> IN
+  , (KIND t) !>> IN
   ) => GraphQLInputKind (t :: * -> *) where
   readInputType :: t a -> JSON.Value -> V a
 

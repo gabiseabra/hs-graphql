@@ -26,39 +26,39 @@ import qualified Data.Text as Text
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
 
 instance GraphQLType ID where
-  type KindOf ID = GraphQLScalar
+  type KindOf ID = SCALAR
   typename _ = "ID"
 
 instance GraphQLType Bool where
-  type KindOf Bool = GraphQLScalar
+  type KindOf Bool = SCALAR
   typename _ = "Boolean"
 
 instance GraphQLType Int where
-  type KindOf Int = GraphQLScalar
+  type KindOf Int = SCALAR
   typename _ = "Int"
 
 instance GraphQLType Integer where
-  type KindOf Integer = GraphQLScalar
+  type KindOf Integer = SCALAR
   typename _ = "Int"
 
 instance GraphQLType Float where
-  type KindOf Float = GraphQLScalar
+  type KindOf Float = SCALAR
   typename _ = "Float"
 
 instance GraphQLType Double where
-  type KindOf Double = GraphQLScalar
+  type KindOf Double = SCALAR
   typename _ = "Float"
 
 instance GraphQLType Text where
-  type KindOf Text = GraphQLScalar
+  type KindOf Text = SCALAR
   typename _ = "String"
 
 instance GraphQLType Char where
-  type KindOf Char = GraphQLScalar
+  type KindOf Char = SCALAR
   typename _ = "String"
 
 instance GraphQLType a => GraphQLType (Maybe a) where
-  type KindOf (Maybe a) = GraphQLNullable (KindOf a)
+  type KindOf (Maybe a) = NULLABLE (KindOf a)
   typename _ = "Nullable"
 
 type family StringOrListK a where
@@ -66,8 +66,8 @@ type family StringOrListK a where
   StringOrListK a      = "List"
 
 type StringOrList t
-  =  "String" .== GraphQLScalar
-  .+ "List"   .== GraphQLList t
+  =  "String" .== SCALAR
+  .+ "List"   .== LIST t
 
 instance
   ( StringOrListK [a] ~ sym

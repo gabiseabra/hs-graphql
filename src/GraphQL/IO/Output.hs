@@ -27,11 +27,11 @@ import qualified Data.HashMap.Strict as Map
 data NodeType = LEAF | BRANCH | WRAPPER NodeType
 
 type family NodeTypeOf k where
-  NodeTypeOf SCALAR = LEAF
-  NodeTypeOf ENUM = LEAF
-  NodeTypeOf OBJECT = BRANCH
-  NodeTypeOf (LIST k) = WRAPPER (NodeTypeOf k)
-  NodeTypeOf (NULLABLE k) = WRAPPER (NodeTypeOf k)
+  NodeTypeOf GQL_SCALAR = LEAF
+  NodeTypeOf GQL_ENUM = LEAF
+  NodeTypeOf GQL_OBJECT = BRANCH
+  NodeTypeOf (GQL_LIST k) = WRAPPER (NodeTypeOf k)
+  NodeTypeOf (GQL_NULLABLE k) = WRAPPER (NodeTypeOf k)
 
 data Resolver t f a where
   Leaf :: JSON.ToJSON a => Resolver LEAF f a
@@ -67,9 +67,9 @@ instance
 
 class
   ( GraphQLKind t
-  , (Kind t) !>> OUT
+  , (KIND t) !>> OUT
   ) => GraphQLOutputKind (m :: * -> *) (t :: * -> *) where
-  mkResolver :: t a -> Resolver (NodeTypeOf (Kind t)) (Field m) a
+  mkResolver :: t a -> Resolver (NodeTypeOf (KIND t)) (Field m) a
 
 class
   ( GraphQLOutputKind m (KindOf a)

@@ -34,7 +34,7 @@ data AnInputObject
 instance Show AnInputObject where show (AnInputObject { io_0, io_1 }) = fromMaybe io_0 io_1
 
 instance GraphQLType AnInputObject where
-  type KindOf AnInputObject = GraphQLInputObject
+  type KindOf AnInputObject = INPUT_OBJECT
   typename _ = "AnInputObject"
 
 -- | Completely optional input
@@ -59,7 +59,7 @@ data A m
     } deriving (Generic)
 
 instance Applicative m => GraphQLType (A m) where
-  type KindOf (A m) = GraphQLObject m
+  type KindOf (A m) = OBJECT m
   typename _ = "A"
 
 a :: Input1 -> (A IO)
