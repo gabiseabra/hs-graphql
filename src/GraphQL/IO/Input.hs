@@ -13,9 +13,8 @@
 
 module GraphQL.IO.Input where
 
-import GraphQL.Internal
 import GraphQL.Class
-import GraphQL.IO.Kinds
+import GraphQL.Internal
 
 import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON

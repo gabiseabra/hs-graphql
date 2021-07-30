@@ -4,11 +4,15 @@
   , FlexibleContexts
   , ConstraintKinds
   , MultiParamTypeClasses
+  , TypeOperators
 #-}
 
 module GraphQL.Class
   ( Typename
   , TypeKind(..)
+  , TypeIO(..)
+  , type (?>>)
+  , type (!>>)
   , GraphQLKind(..)
   , GraphQLTypeable(..)
   , typeOf_
@@ -29,8 +33,22 @@ data TypeKind
   | ENUM
   | OBJECT
   | INPUT_OBJECT
+  | UNION
   | LIST TypeKind
   | NULLABLE TypeKind
+
+data TypeIO = IN | OUT
+
+type family k ?>> io where
+  SCALAR       ?>> io  = True
+  ENUM         ?>> io  = True
+  UNION        ?>> OUT = True
+  OBJECT       ?>> OUT = True
+  INPUT_OBJECT ?>> IN  = True
+  (k' k)       ?>> io  = k ?>> io
+  k            ?>> io  = False
+
+type k !>> io = k ?>> io ~ True
 
 class GraphQLKind (t :: * -> *) where type Kind t :: TypeKind
 

@@ -15,7 +15,6 @@
 module GraphQL.IO.Output where
 
 import GraphQL.Class
-import GraphQL.IO.Kinds
 import GraphQL.IO.Input
 
 import qualified Data.Aeson as JSON

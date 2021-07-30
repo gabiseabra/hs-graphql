@@ -22,7 +22,6 @@ library
     GraphQL.Types
     GraphQL.Selection
     GraphQL.Resolution
-    GraphQL.IO.Kinds
     GraphQL.IO.Input
     GraphQL.IO.Output
   default-language:    Haskell2010
