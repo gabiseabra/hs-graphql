@@ -1,5 +1,6 @@
 {-# LANGUAGE
     DataKinds
+  , GADTs
   , TypeFamilies
   , FlexibleContexts
   , FlexibleInstances
@@ -64,16 +65,22 @@ class
   readInputType :: t a -> JSON.Value -> V a
 
 class GraphQLInput a where
-  readInput :: Input -> V a
-  default readInput
+  inputFields :: InputFields a
+  default inputFields
     :: Rec.ToNative a
-    => Rec.AllUniqueLabels (Rec.NativeRow a)
+    => Row.AllUniqueLabels (Rec.NativeRow a)
     => Rec.Forall (Rec.NativeRow a) GraphQLInputType
-    => Input
-    -> V a
-  readInput = pure . Rec.toNative <=< readInputFields . JSON.Object
+    => InputFields a
+  inputFields = InputFields Rec.toNative
 
-instance GraphQLInput () where readInput _ = pure ()
+data InputFields a where
+  InputFields ::
+    ( Row.Forall r GraphQLInputType
+    , Row.AllUniqueLabels r
+    ) => (Rec r -> a)
+      -> InputFields a
+
+instance GraphQLInput () where inputFields = InputFields (\(_ :: Rec Row.Empty) -> ())
 
 class
   ( GraphQLType a
@@ -100,3 +107,6 @@ readInputFields (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
         val = fromMaybe JSON.Null $ Map.lookup key obj
       in readInputType' val
 readInputFields actual = Left "expected an object"
+
+readInput :: forall a. GraphQLInput a => Input -> V a
+readInput = case inputFields @a of InputFields f -> pure . f <=< readInputFields . JSON.Object
