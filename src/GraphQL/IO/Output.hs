@@ -85,3 +85,14 @@ instance
   ( GraphQLOutputKind m (KindOf a)
   , GraphQLType a
   ) => GraphQLOutputType m a
+
+class
+  ( GraphQLOutputKind m (KindOf a)
+  , KIND (KindOf a) ~ GQL_OBJECT
+  , GraphQLType a
+  ) => GraphQLObjectType m a
+instance
+  ( GraphQLOutputKind m (KindOf a)
+  , KIND (KindOf a) ~ GQL_OBJECT
+  , GraphQLType a
+  ) => GraphQLObjectType m a

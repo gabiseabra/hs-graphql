@@ -17,6 +17,7 @@ module GraphQL.Kinds
   ( SCALAR
   , OBJECT
   , INPUT_OBJECT
+  , UNION
   , LIST
   , NULLABLE
   , type (.@)
@@ -38,7 +39,10 @@ import Data.Maybe (fromMaybe)
 import Data.Row (Rec, type (.!))
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
+import qualified Data.Row.Variants as Var
 import Data.Text (Text)
+import Data.Functor.Compose (Compose(..))
+import Data.Proxy (Proxy(..))
 
 data SCALAR a where
   ScalarT ::
@@ -82,7 +86,7 @@ instance GraphQLOutputKind m (OBJECT m) where
       @((->) a)
       @(Rec.NativeRow a)
       (Field . fmap applyInput)
-    $ accessors @a
+    $ recordAccessors @a
 
 data INPUT_OBJECT a where
   InputObjectT ::
@@ -100,6 +104,34 @@ instance
   ) => GraphQLTypeable INPUT_OBJECT a where typeOf = InputObjectT
 instance GraphQLKind INPUT_OBJECT where type KIND INPUT_OBJECT = GQL_INPUT_OBJECT
 instance GraphQLInputKind INPUT_OBJECT where readInputType InputObjectT = pure . Rec.toNative <=< readInputFields
+
+data UNION m a where
+  UnionT ::
+    ( Var.FromNative a
+    , Row.AllUniqueLabels (Var.NativeRow a)
+    , Row.Forall (Var.NativeRow a) (GraphQLObjectType m)
+    ) => UNION m a
+
+instance
+  ( Var.FromNative a
+  , Row.AllUniqueLabels (Var.NativeRow a)
+  , Row.Forall (Var.NativeRow a) (GraphQLObjectType m)
+  ) => GraphQLTypeable (UNION m) a where typeOf = UnionT
+instance GraphQLKind (UNION m) where type KIND (UNION m) = GQL_UNION
+instance GraphQLOutputKind m (UNION m) where
+  mkResolver :: forall a. UNION m a -> Resolver VARIANT (Field m) a
+  mkResolver UnionT
+    = Variant
+    $ Map.fromList
+    $ eraseF
+      @(GraphQLObjectType m)
+      @(Compose ((->) a) Maybe)
+      @(Var.NativeRow a)
+      mkCase
+    $ variantCases @(GraphQLObjectType m) @a
+    where
+      mkCase :: forall b. GraphQLObjectType m b => Compose ((->) a) Maybe b -> (Text, Case (Resolver BRANCH (Field m)) a)
+      mkCase f = (typename (Proxy @b), Case (getCompose f) (mkResolver (typeOf_ @b)))
 
 data LIST t a where
   ListT ::
