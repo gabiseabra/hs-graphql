@@ -5,6 +5,7 @@
   , ConstraintKinds
   , MultiParamTypeClasses
   , TypeOperators
+  , RankNTypes
 #-}
 
 module GraphQL.Class
@@ -54,7 +55,7 @@ class GraphQLKind (t :: * -> *) where type KIND t :: TypeKind
 
 class GraphQLTypeable t a where typeOf :: t a
 
-typeOf_ :: (GraphQLType a, InstanceOf t a) => t a
+typeOf_ :: forall a t. InstanceOf t a => t a
 typeOf_ = typeOf
 
 class
