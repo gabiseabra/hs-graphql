@@ -44,7 +44,7 @@ instance GraphQLOutputKind m GraphQLScalar where
   - [ ] enums
   - [x] objects
   - [x] input objects
-  - [ ] unions
+  - [x] unions
   - [ ] interfaces
   - [x] lists
   - [x] nullable
