@@ -56,6 +56,10 @@ spec = describe "Examples.UnionSpec" $ do
     exec s ab `shouldReturn` o
   it "fails with empty selection" $ do
     eval @(AB IO) [] `shouldBe` Left "Invalid selection"
+  it "fails with invalid typename" $ do
+    let
+      s = [ sel_ "a0" `on` "X" &: [] ]
+    eval @(AB IO) s `shouldBe` Left "Invalid typenames in union selection (X)"
   it "fails with unspecified typename" $ do
     let
       s = [ sel_ "a0" &: [] ]
