@@ -9,6 +9,7 @@
   , ScopedTypeVariables
   , TypeApplications
   , ConstraintKinds
+  , OverloadedStrings
 #-}
 
 module GraphQL.Resolution
@@ -25,7 +26,7 @@ import Control.Monad ((>=>), (<=<))
 import Control.Applicative ((<|>), liftA2)
 import Control.Arrow ((&&&), (<<<))
 import qualified Data.Aeson as JSON
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Bitraversable (bisequence)
 import Data.Functor.Base (TreeF(..))
 import Data.Functor.Foldable (Recursive(..), Corecursive(..), Base)
@@ -45,7 +46,7 @@ data Step t m a where
 
 resolve :: forall a m t
   .  Monad m
-  => SelectionR t
+  => IsSelection t
   => GraphQLOutputType m a
   => [t]
   -> V (a -> m JSON.Value)
@@ -76,7 +77,7 @@ sequence2 :: (Traversable t, Monad m, Monad f) => t (f (m a)) -> f (m (t a))
 sequence2 = fmap sequence . sequence
 
 validate :: forall a k m t
-  .  SelectionR t
+  .  IsSelection t
   => [t]
   -> Resolver k (Field m) a
   -> V (Resolver k (Step t m) a)
@@ -87,7 +88,7 @@ validate s@(_:_) (Variant as) = pure . Variant =<< (flip validate'Variant) as =<
 validate _ _ = Left "Invalid selection"
 
 validate'Object :: forall a m t
-  .  SelectionR t
+  .  IsSelection t
   => [t]
   -> HashMap Text (Field m a)
   -> V (HashMap Text (Step t m a))
@@ -99,37 +100,52 @@ validate'Object s as = pure . Map.fromList =<< mapM (f . project) s
       >>= \r -> pure (fromMaybe name alias, r)
 
 validate'Variant :: forall a m t
-  .  SelectionR t
+  .  IsSelection t
   => HashMap Typename [t]
   -> HashMap Typename (Case (Resolver BRANCH (Field m)) a)
   -> V (HashMap Typename (Case (Resolver BRANCH (Step t m)) a))
-validate'Variant s = Map.traverseWithKey $ \k (Case f r) ->
-  case Map.lookup k s of
-    Nothing -> Case f <$> pure (Branch Map.empty)
-    Just s' -> Case f <$> validate s' r
+validate'Variant s r = typenamesMatch s r *> Map.traverseWithKey go r
+  where
+    go k (Case f r) =
+      case Map.lookup k s of
+        Nothing -> Case f <$> pure (Branch Map.empty)
+        Just s' -> Case f <$> validate s' r
+
+typenameMatches :: Typename -> Typename -> V ()
+typenameMatches t0 t1 =
+  if t0 == t1
+  then Right ()
+  else Left $ "Typename mismatch: Expected " <> t0 <> ", got " <> t1
+
+typenamesMatch :: HashMap Typename a -> HashMap Typename b -> V ()
+typenamesMatch a b =
+  let diff = Map.differenceWith (\_ _ -> Nothing) a b
+  in
+    if Map.null diff
+    then Right ()
+    else Left $ "Invalid typenames in union selection (" <> Text.intercalate ", " (Map.keys diff) <> ")"
 
 node :: TreeF a b -> a
 node (NodeF a _) = a
 
-groupSelection
-  :: SelectionR t
-  => [t]
-  -> V (HashMap Typename [t])
+groupSelection :: forall t. IsSelection t => [t] -> V (HashMap Typename [t])
 groupSelection = pure . Map.fromListWith (++) <=< mapM go
   where
-    go = maybe err pure . bisequence . (typeConstraint . node &&& Just . pure . embed) . project
-    err = Left "No typename provided for union type"
+    go :: t -> V (Typename, [t])
+    go t =
+      case (typeConstraint . node . project) t of
+        Nothing -> Left "No typename provided for union field"
+        Just a  -> Right (a, [t])
 
 select :: Text -> HashMap Text a -> V a
 select k as = case Map.lookup k as of
-  Nothing -> Left $ "field " <> Text.unpack k <> " doesn't exist"
+  Nothing -> Left $ "Field " <> k <> " doesn't exist"
   Just a -> Right a
 
 apply :: [t] -> Input -> Field m a -> V (Step t m a)
 apply s i (Field f) = (\i -> pure $ Step (\a -> f a i) s) =<< readInput i
 
-type SelectionR t
+type IsSelection t
   = ( Recursive t
-    , Corecursive t
     , Base t ~ TreeF Selection
     )

@@ -11,6 +11,7 @@
   , UndecidableInstances
   , TypeOperators
   , InstanceSigs
+  , OverloadedStrings
 #-}
 
 module GraphQL.Kinds

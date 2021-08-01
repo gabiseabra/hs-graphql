@@ -28,11 +28,13 @@ import qualified Data.Row as Row
 import qualified Data.Row.Internal as Row (metamorph)
 import qualified Data.Row.Records as Rec
 import qualified Data.Row.Variants as Var
+import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.String (IsString)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Identity (Identity(..))
 
-type V a = Either String a
+type V a = Either Text a
 
 mapRow :: forall c r b
   .  Row.Forall r c
@@ -107,5 +109,5 @@ eraseF f
   . Rec.transform @c @r @f @(Const [b]) (Const . pure . f)
 
 liftJSONResult :: JSON.Result a -> V a
-liftJSONResult (JSON.Error e) = Left e
+liftJSONResult (JSON.Error e) = Left $ Text.pack e
 liftJSONResult (JSON.Success a) = Right a

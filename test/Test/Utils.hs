@@ -15,12 +15,12 @@ import GraphQL.Resolution
 import GraphQL.IO.Input
 import GraphQL.IO.Output
 
-
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (second)
 import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF(..))
 import Data.Text (Text)
+import qualified Data.Text as Text
 
 type STree = Fix (TreeF Selection)
 
@@ -28,13 +28,22 @@ type STree = Fix (TreeF Selection)
 (&:) s r = Fix (NodeF s r)
 
 sel :: Text -> JSON.Value -> Selection
-sel n (JSON.Object i) = Sel { name = n, input = i, alias = Nothing }
+sel n (JSON.Object i)
+  = Sel
+    { name = n
+    , input = i
+    , alias = Nothing
+    , typeConstraint = Nothing
+    }
 
 sel_ :: Text -> Selection
 sel_ n = sel n (JSON.Object mempty)
 
 as :: Selection -> Text -> Selection
-as (Sel { name, input }) a = Sel { name = name, input = input, alias = Just a }
+as s a = s { alias = Just a }
+
+on :: Selection -> Text -> Selection
+on s a = s { typeConstraint = Just a }
 
 -- | Validates and executes selection
 exec ::
@@ -43,7 +52,7 @@ exec ::
   ) => [STree] -> a -> m JSON.Value
 exec = go . resolve
   where
-    go (Left e) _ = fail e
+    go (Left e) _ = fail $ Text.unpack e
     go (Right f) a = f a
 
 -- | Just validates a selection

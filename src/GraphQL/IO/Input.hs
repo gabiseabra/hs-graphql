@@ -9,6 +9,7 @@
   , ScopedTypeVariables
   , DefaultSignatures
   , TypeOperators
+  , OverloadedStrings
 #-}
 
 module GraphQL.IO.Input where
