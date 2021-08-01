@@ -64,7 +64,7 @@ sequenceResolver :: forall a m f k
   => (forall a. f a -> V (a -> m JSON.Value))
   -> Resolver k f a
   -> V (a -> m JSON.Value)
-sequenceResolver _ Leaf = pure $ pure . JSON.toJSON
+sequenceResolver _ (Leaf f) = pure $ pure . f
 -- TODO — if it's an branch wrapper, batch together all the same fields
 sequenceResolver f (Wrap r) = pure . g =<< sequenceResolver f r
   where g f = pure . JSON.toJSON1 <=< traverse f
@@ -85,7 +85,7 @@ validate :: forall a k m t
   -> [t]
   -> Resolver k (Field m) a
   -> V (Resolver k (Step t m) a)
-validate _ [] Leaf = pure Leaf
+validate _ [] (Leaf f) = pure (Leaf f)
 validate t s (Wrap r) = pure . Wrap =<< validate t s r
 validate t s@(_:_) (Branch as) = pure . Branch =<< validate'Object t s as
 validate _ s@(_:_) (Variant as)

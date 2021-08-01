@@ -39,7 +39,7 @@ type family NodeTypeOf k where
 data Case f a where Case :: (a -> Maybe b) -> f b -> Case f a
 
 data Resolver t f a where
-  Leaf :: JSON.ToJSON a => Resolver LEAF f a
+  Leaf :: (a -> JSON.Value) -> Resolver LEAF f a
   Branch :: HashMap Text (f a) -> Resolver BRANCH f a
   Variant :: HashMap Typename (Case (Resolver BRANCH f) a) -> Resolver VARIANT f a
   Wrap ::

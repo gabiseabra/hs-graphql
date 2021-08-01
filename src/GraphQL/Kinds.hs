@@ -12,10 +12,12 @@
   , TypeOperators
   , InstanceSigs
   , OverloadedStrings
+  , AllowAmbiguousTypes
 #-}
 
 module GraphQL.Kinds
   ( SCALAR
+  , ENUM
   , OBJECT
   , INPUT_OBJECT
   , UNION
@@ -23,6 +25,9 @@ module GraphQL.Kinds
   , NULLABLE
   , type (.@)
   ) where
+
+import qualified GHC.Generics as GR
+import GHC.TypeLits (KnownSymbol, symbolVal)
 
 import GraphQL.Internal
 import GraphQL.Class
@@ -42,6 +47,7 @@ import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
 import qualified Data.Row.Variants as Var
 import Data.Text (Text)
+import Data.Char (toUpper)
 import Data.Functor.Compose (Compose(..))
 import Data.Proxy (Proxy(..))
 
@@ -54,13 +60,54 @@ data SCALAR a where
 instance
   ( JSON.FromJSON a
   , JSON.ToJSON a
-  ) => GraphQLTypeable SCALAR a where
-  typeOf = ScalarT
+  ) => GraphQLTypeable SCALAR a where typeOf = ScalarT
 instance GraphQLKind SCALAR where type KIND SCALAR = GQL_SCALAR
 instance GraphQLInputKind SCALAR where
   readInputType ScalarT = liftJSONResult . JSON.fromJSON
 instance GraphQLOutputKind m SCALAR where
-  mkResolver ScalarT = Leaf
+  mkResolver ScalarT = Leaf JSON.toJSON
+
+class GraphQLEnumG f where
+  gql_fromEnum :: f a -> String
+  gql_toEnum :: String -> Maybe (f a)
+  gql_enumValues :: proxy f -> [String]
+
+instance GraphQLEnumG cons => GraphQLEnumG (GR.D1 meta cons) where
+  gql_fromEnum = gql_fromEnum . GR.unM1
+  gql_toEnum = fmap GR.M1 . gql_toEnum @cons
+  gql_enumValues _ = gql_enumValues (Proxy @cons)
+instance (GraphQLEnumG l, GraphQLEnumG r) => GraphQLEnumG (l GR.:+: r) where
+  gql_fromEnum (GR.L1 a) = gql_fromEnum a
+  gql_fromEnum (GR.R1 a) = gql_fromEnum a
+  gql_toEnum a = fmap GR.L1 (gql_toEnum a) <|> fmap GR.R1 (gql_toEnum a)
+  gql_enumValues _ = gql_enumValues (Proxy @l) <> gql_enumValues (Proxy @r)
+instance KnownSymbol sym => GraphQLEnumG (GR.C1 (GR.MetaCons sym f 'False) GR.U1) where
+  gql_fromEnum _ = enumVal @sym
+  gql_toEnum a
+    | a == enumVal @sym = pure empty
+    | otherwise         = Nothing
+  gql_enumValues _ = [enumVal @sym]
+
+enumVal :: forall sym. KnownSymbol sym => String
+enumVal = fmap toUpper $ symbolVal $ Proxy @sym
+
+data ENUM a where
+  EnumT ::
+    ( GR.Generic a
+    , GraphQLEnumG (GR.Rep a)
+    ) => ENUM a
+
+instance
+  ( GR.Generic a
+  , GraphQLEnumG (GR.Rep a)
+  ) => GraphQLTypeable ENUM a where typeOf = EnumT
+instance GraphQLKind ENUM where type KIND ENUM = GQL_ENUM
+instance GraphQLInputKind ENUM where
+  readInputType EnumT
+    = maybe (Left "Invalid enum value") (Right . GR.to)
+    . gql_toEnum <=< liftJSONResult . JSON.fromJSON
+instance GraphQLOutputKind m ENUM where
+  mkResolver EnumT = Leaf (JSON.toJSON . gql_fromEnum . GR.from)
 
 data OBJECT m a where
   ObjectT ::

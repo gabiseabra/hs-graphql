@@ -41,7 +41,7 @@ instance GraphQLOutputKind m GraphQLScalar where
 
 - [ ] kinds
   - [x] scalars
-  - [ ] enums
+  - [x] enums
   - [x] objects
   - [x] input objects
   - [x] unions
