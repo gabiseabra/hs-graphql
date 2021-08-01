@@ -77,9 +77,9 @@ spec = describe "Examples.InputSpec" $ do
   it "parses valid input" $ do
     let
       i = object
-            [ "i1_0" .= (69 :: Int)
-            , "i1_1" .= object [ "io_0" .= ("lmao" :: String) ]
-            ]
+          [ "i1_0" .= (69 :: Int)
+          , "i1_1" .= object [ "io_0" .= ("lmao" :: String) ]
+          ]
       s = [ sel_ "a0" &: []
           , sel_ "a1" &: []
           , sel_ "a2" &: []
@@ -89,14 +89,14 @@ spec = describe "Examples.InputSpec" $ do
             ]
           ]
       o = object
-            [ "a0" .= (420 :: Int)
-            , "a1" .= (Nothing :: Maybe ())
-            , "a2" .= (0 :: Int)
-            , "a3" .= object
-              [ "a0" .= (69 :: Int)
-              , "eyy" .= ("lmao" :: String)
-              ]
+          [ "a0" .= (420 :: Int)
+          , "a1" .= (Nothing :: Maybe ())
+          , "a2" .= (0 :: Int)
+          , "a3" .= object
+            [ "a0" .= (69 :: Int)
+            , "eyy" .= ("lmao" :: String)
             ]
+          ]
     exec s a' `shouldReturn` o
   it "fails with invalid input values" $ do
     let
@@ -104,6 +104,5 @@ spec = describe "Examples.InputSpec" $ do
       s = [ sel "a3" i &: [ sel_ "a0" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered String"
   it "fails with missing input fields" $ do
-    let
-      s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
+    let s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered Null"

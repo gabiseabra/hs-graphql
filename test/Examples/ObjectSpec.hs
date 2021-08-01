@@ -42,25 +42,36 @@ spec :: Spec
 spec = describe "Examples.ObjectSpec" $ do
   it "resolves selected fields" $ do
     let
-      s = [ sel_ "a0" &: []
+      s = [ sel_ "__typename" &: []
+          , sel_ "a0" &: []
           , sel_ "a2" &: [ sel_ "a1" `as` "eyy" &: [] ]
           ]
       o = object
-            [ "a0" .= (420 :: Int)
-            , "a2" .=
-                [ object [ "eyy" .= ("lmao" :: String) ]
-                , object [ "eyy" .= ("lmao" :: String) ]
-                , object [ "eyy" .= ("lmao" :: String) ]
-                ]
-            ]
+          [ "__typename" .= ("A" :: String)
+          , "a0" .= (420 :: Int)
+          , "a2" .=
+              [ object [ "eyy" .= ("lmao" :: String) ]
+              , object [ "eyy" .= ("lmao" :: String) ]
+              , object [ "eyy" .= ("lmao" :: String) ]
+              ]
+          ]
     exec s a `shouldReturn` o
   it "fails with empty selection on objects" $ do
     eval @(A IO) [] `shouldBe` Left "Invalid selection"
   it "fails with non-empty selection on scalars" $ do
-    let
-      s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
+    let s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
     eval @(A IO) s `shouldBe` Left "Invalid selection"
+  it "fails with mismatched typename" $ do
+    let s = [ sel_ "a0" `on` "X" &: [] ]
+    eval @(A IO) s `shouldBe` Left "Typename mismatch: Expected A, got X"
   it "fails invalid selection" $ do
+    let s = [ sel_ "x" &: [] ]
+    eval @(A IO) s `shouldBe` Left "Field x doesn't exist on type A"
+  it "fails with non-empty selection on __typename" $ do
+    let s = [ sel_ "__typename" &: [ sel_ "??" &: [] ] ]
+    eval @(A IO) s `shouldBe` Left "Invalid selection: __typename does not have fields"
+  it "fails with non-empty input on __typename" $ do
     let
-      s = [ sel_ "x" &: [] ]
-    eval @(A IO) s `shouldBe` Left "Field x doesn't exist"
+      i = object [ "a" .= True ]
+      s = [ sel "__typename" i &: [] ]
+    eval @(A IO) s `shouldBe` Left "Invalid selection: __typename does not have arguments"

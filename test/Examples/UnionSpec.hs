@@ -49,22 +49,23 @@ spec :: Spec
 spec = describe "Examples.UnionSpec" $ do
   it "resolves union types" $ do
     let
-      s = [ sel_ "a0" `on` "A" &: []
+      s = [ sel_ "__typename" &: []
+          , sel_ "a0" `on` "A" &: []
           , sel_ "b0" `on` "B" &: []
           ]
-      o = object [ "a0" .= (420 :: Int) ]
+      o = object
+          [ "__typename" .= ("A" :: String)
+          , "a0" .= (420 :: Int)
+          ]
     exec s ab `shouldReturn` o
   it "fails with empty selection" $ do
     eval @(AB IO) [] `shouldBe` Left "Invalid selection"
   it "fails with invalid typename" $ do
-    let
-      s = [ sel_ "a0" `on` "X" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Invalid typenames in union selection (X)"
+    let s = [ sel_ "x" `on` "X" &: [] ]
+    eval @(AB IO) s `shouldBe` Left "Invalid typename X in union selection"
   it "fails with unspecified typename" $ do
-    let
-      s = [ sel_ "a0" &: [] ]
+    let s = [ sel_ "a0" &: [] ]
     eval @(AB IO) s `shouldBe` Left "No typename provided for union field"
   it "fails with invalid selection on possible type" $ do
-    let
-      s = [ sel_ "a1" `on` "A" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Field a1 doesn't exist"
+    let s = [ sel_ "a1" `on` "A" &: [] ]
+    eval @(AB IO) s `shouldBe` Left "Field a1 doesn't exist on type A"

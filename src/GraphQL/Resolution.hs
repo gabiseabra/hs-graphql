@@ -22,7 +22,7 @@ import GraphQL.IO.Output
 import GraphQL.IO.Input
 import GraphQL.Internal
 
-import Control.Monad ((>=>), (<=<))
+import Control.Monad ((>=>), (<=<), join)
 import Control.Applicative ((<|>), liftA2)
 import Control.Arrow ((&&&), (<<<))
 import qualified Data.Aeson as JSON
@@ -43,6 +43,7 @@ import qualified Data.Row.Records as Rec
 
 data Step t m a where
   Step :: GraphQLOutputType m o => (a -> m o) -> [t] -> Step t m a
+  Pure :: (a -> m JSON.Value) -> Step t m a
 
 resolve :: forall a m t
   .  Monad m
@@ -54,8 +55,9 @@ resolve = fun
   where
     go :: forall f a. Step t m a -> V (a -> m JSON.Value)
     go (Step f s) = pure . (\g -> f >=> g) =<< fun s
+    go (Pure f) = pure f
     fun :: forall a. GraphQLOutputType m a => [t] -> V (a -> m JSON.Value)
-    fun s = sequenceResolver go =<< validate s (mkResolver (typeOf_ @a))
+    fun s = sequenceResolver go =<< validate (typename $ Proxy @a) s (mkResolver (typeOf_ @a))
 
 sequenceResolver :: forall a m f k
   .  Monad m
@@ -78,68 +80,81 @@ sequence2 = fmap sequence . sequence
 
 validate :: forall a k m t
   .  IsSelection t
-  => [t]
+  => Monad m
+  => Typename
+  -> [t]
   -> Resolver k (Field m) a
   -> V (Resolver k (Step t m) a)
-validate [] Leaf = pure Leaf
-validate s (Wrap r) = pure . Wrap =<< validate s r
-validate s@(_:_) (Branch as) = pure . Branch =<< validate'Object s as
-validate s@(_:_) (Variant as) = pure . Variant =<< (flip validate'Variant) as =<< groupSelection s
-validate _ _ = Left "Invalid selection"
+validate _ [] Leaf = pure Leaf
+validate t s (Wrap r) = pure . Wrap =<< validate t s r
+validate t s@(_:_) (Branch as) = pure . Branch =<< validate'Object t s as
+validate _ s@(_:_) (Variant as)
+  = pure . Variant
+  =<< (flip validate'Variant) as
+  =<< groupSelection (Map.keys as) s
+validate _ _ _ = Left "Invalid selection"
 
 validate'Object :: forall a m t
-  .  IsSelection t
-  => [t]
+  .  Monad m
+  => IsSelection t
+  => Typename
+  -> [t]
   -> HashMap Text (Field m a)
   -> V (HashMap Text (Step t m a))
-validate'Object s as = pure . Map.fromList =<< mapM (f . project) s
+validate'Object t s as = pure . Map.fromList =<< mapM ((\s -> checkType s *> checkField s) . project) s
   where
-    f (NodeF (Sel { name, alias, input }) tail)
-      = select name as
+    checkType = maybe (pure ()) (typenameMatches t) . typeConstraint . node
+    checkField s@(NodeF (Sel { name = "__typename", alias }) _)
+      = validate'__typename s
+      *> pure
+        ( fromMaybe "__typename" alias
+        , Pure (const $ pure $ JSON.toJSON $ t)
+        )
+    checkField (NodeF (Sel { name, alias, input }) tail)
+      = select t name as
       >>= apply tail input
       >>= \r -> pure (fromMaybe name alias, r)
 
 validate'Variant :: forall a m t
   .  IsSelection t
+  => Monad m
   => HashMap Typename [t]
   -> HashMap Typename (Case (Resolver BRANCH (Field m)) a)
   -> V (HashMap Typename (Case (Resolver BRANCH (Step t m)) a))
-validate'Variant s r = typenamesMatch s r *> Map.traverseWithKey go r
-  where
-    go k (Case f r) =
-      case Map.lookup k s of
-        Nothing -> Case f <$> pure (Branch Map.empty)
-        Just s' -> Case f <$> validate s' r
+validate'Variant s = Map.traverseWithKey $ \k (Case f r) ->
+  case Map.lookup k s of
+    Nothing -> Case f <$> pure (Branch Map.empty)
+    Just s' -> Case f <$> validate k s' r
+
+validate'__typename :: TreeF Selection a -> V ()
+validate'__typename (NodeF _ (_:_)) = Left "Invalid selection: __typename does not have fields"
+validate'__typename (NodeF (Sel { input }) _)
+  | Map.null input = Right ()
+  | otherwise      = Left "Invalid selection: __typename does not have arguments"
 
 typenameMatches :: Typename -> Typename -> V ()
-typenameMatches t0 t1 =
-  if t0 == t1
-  then Right ()
-  else Left $ "Typename mismatch: Expected " <> t0 <> ", got " <> t1
+typenameMatches t0 t1
+  | t0 == t1  = Right ()
+  | otherwise = Left $ "Typename mismatch: Expected " <> t0 <> ", got " <> t1
 
-typenamesMatch :: HashMap Typename a -> HashMap Typename b -> V ()
-typenamesMatch a b =
-  let diff = Map.differenceWith (\_ _ -> Nothing) a b
-  in
-    if Map.null diff
-    then Right ()
-    else Left $ "Invalid typenames in union selection (" <> Text.intercalate ", " (Map.keys diff) <> ")"
+groupSelection :: forall t. IsSelection t => [Typename] -> [t] -> V (HashMap Typename [t])
+groupSelection as = pure . Map.fromListWith (++) . join <=< mapM go
+  where
+    go :: t -> V [(Typename, [t])]
+    go t =
+      case ((typeConstraint &&& name) . node . project) t of
+        (Nothing, "__typename") -> Right (fmap (\a -> (a, [t])) as)
+        (Nothing, _) -> Left "No typename provided for union field"
+        (Just a, _)
+          | List.elem a as -> Right [(a, [t])]
+          | otherwise      -> Left $ "Invalid typename " <> a <> " in union selection"
 
 node :: TreeF a b -> a
 node (NodeF a _) = a
 
-groupSelection :: forall t. IsSelection t => [t] -> V (HashMap Typename [t])
-groupSelection = pure . Map.fromListWith (++) <=< mapM go
-  where
-    go :: t -> V (Typename, [t])
-    go t =
-      case (typeConstraint . node . project) t of
-        Nothing -> Left "No typename provided for union field"
-        Just a  -> Right (a, [t])
-
-select :: Text -> HashMap Text a -> V a
-select k as = case Map.lookup k as of
-  Nothing -> Left $ "Field " <> k <> " doesn't exist"
+select :: Typename -> Text -> HashMap Text a -> V a
+select t k as = case Map.lookup k as of
+  Nothing -> Left $ "Field " <> k <> " doesn't exist on type " <> t
   Just a -> Right a
 
 apply :: [t] -> Input -> Field m a -> V (Step t m a)

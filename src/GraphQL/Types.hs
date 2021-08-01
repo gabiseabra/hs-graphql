@@ -14,7 +14,7 @@ module GraphQL.Types where
 import GraphQL.Class
 import GraphQL.Kinds
 
-import GHC.TypeLits (KnownSymbol, symbolVal)
+import GHC.TypeLits (KnownSymbol)
 
 import qualified Data.Aeson as JSON
 import Data.Proxy (Proxy(..))
@@ -59,7 +59,7 @@ instance GraphQLType Char where
 
 instance GraphQLType a => GraphQLType (Maybe a) where
   type KindOf (Maybe a) = NULLABLE (KindOf a)
-  typename _ = "Nullable"
+  typename _ = typename (Proxy @a)
 
 type family StringOrListK a where
   StringOrListK String = "String"
@@ -77,4 +77,4 @@ instance
   , GraphQLTypeable (sym .@ StringOrList (KindOf a)) [a]
   ) => GraphQLType [a] where
   type KindOf [a] = (StringOrListK [a] .@ StringOrList (KindOf a))
-  typename _ = Text.pack $ symbolVal (Proxy @sym)
+  typename _ = typename (Proxy @a)
