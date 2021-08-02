@@ -17,6 +17,8 @@ module GraphQL.AST.Lexer
   , brackets
   , vars
   , name
+  , varName
+  , directiveName
   , enumVal
   , boolVal
   , intVal
@@ -112,6 +114,12 @@ name = label "Name" $ lexeme $ do
   a  <- alphaChar
   as <- many alphaNumChar
   pure $ Text.pack (a:as)
+
+varName :: Parser Text
+varName = label "VariableName" $ lexeme $ char '$' *> name
+
+directiveName :: Parser Text
+directiveName = label "DirectiveName" $ lexeme $ char '@' *> name
 
 -- http://spec.graphql.org/June2018/#EnumValue
 enumVal :: Parser Text

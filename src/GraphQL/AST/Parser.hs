@@ -11,6 +11,7 @@ import GraphQL.Class (Typename)
 import GraphQL.AST.Lexer (Parser)
 import qualified GraphQL.AST.Lexer as L
 
+import Control.Applicative ((<|>))
 import Text.Megaparsec (label, try, choice, optional, many, some, eitherP, eof, customFailure)
 import Text.Megaparsec.Char (string, char)
 import Data.Maybe (isJust, fromMaybe)
@@ -31,14 +32,26 @@ operationType = label "OperationType" $ L.lexeme $ choice
   , Subscription <$ string "subscription"
   ]
 
-type VariableDefinition = (Typename, Bool)
+data VariableDefinition
+  = ListVar VariableDefinition
+  | NonNullVar VariableDefinition
+  | TypeVar Typename
+  deriving (Eq, Show)
+
+variableDefinition :: Parser VariableDefinition
+variableDefinition = label "VariableDefinition" $ L.lexeme $ do
+  var <- choice
+          [ ListVar <$> L.brackets variableDefinition
+          , TypeVar <$> L.name
+          ]
+  required <- isJust <$> optional (char '!')
+  if required
+    then pure $ NonNullVar var
+    else pure var
 
 variableDefinitions :: Parser [(Text, VariableDefinition)]
 variableDefinitions = label "VariableDefinitions"
-  $ L.lexeme $ fmap (fromMaybe mempty) (optional $ L.vars L.parens k v)
-  where
-    k = label "VariableName" $ char '$' *> L.name
-    v = label "Typename" $ (,) <$> L.name <*> (isJust <$> optional (char '!'))
+  $ L.lexeme $ fmap (fromMaybe mempty) (optional $ L.vars L.parens L.varName variableDefinition)
 
 data VariableAssignment
   = NullVal
@@ -55,7 +68,7 @@ data VariableAssignment
 val :: Parser VariableAssignment
 val = label "Value" $ choice
   [ NullVal   <$  L.symbol "null"
-  , Var       <$> (char '$' *> L.name)
+  , Var       <$> L.varName
   , StrVal    <$> L.stringVal
   , IntVal    <$> try L.intVal
   , NumVal    <$> L.doubleVal
