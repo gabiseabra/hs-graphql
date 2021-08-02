@@ -37,8 +37,8 @@ variableDefinitions :: Parser [(Text, VariableDefinition)]
 variableDefinitions = label "VariableDefinitions"
   $ L.lexeme $ fmap (fromMaybe mempty) (optional $ L.vars L.parens k v)
   where
-    k = char '$' *> L.name
-    v = (,) <$> L.name <*> (isJust <$> optional (char '!'))
+    k = label "VariableName" $ char '$' *> L.name
+    v = label "Typename" $ (,) <$> L.name <*> (isJust <$> optional (char '!'))
 
 data VariableAssignment
   = NullVal
@@ -94,10 +94,10 @@ data Selection
   deriving (Eq, Show)
 
 selectionSet :: Maybe Typename -> Parser [Selection]
-selectionSet ty = label "SelectionSet" $ L.lexeme $ L.braces (some $ selection ty)
+selectionSet ty = label "SelectionSet" $ L.lexeme $ L.braces $ some $ selection ty
 
 selectionSet_ :: Maybe Typename -> Parser [Selection]
-selectionSet_ ty = fmap (fromMaybe mempty) (try $ optional $ selectionSet ty)
+selectionSet_ ty = fmap (fromMaybe mempty) (optional $ selectionSet ty)
 
 selection :: Maybe Typename -> Parser Selection
 selection ty = label "Selection" $ L.lexeme $ choice

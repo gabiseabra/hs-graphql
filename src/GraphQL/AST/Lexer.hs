@@ -104,7 +104,7 @@ parens = between (symbol "(") (symbol ")")
 brackets = between (symbol "[") (symbol "]")
 
 vars :: (forall a. Parser a -> Parser a) -> Parser k -> Parser v -> Parser [(k, v)]
-vars f k v = label "Variables" $ f (many ((,) <$> (k <* symbol ":") <*> v))
+vars f k v = label "Variables" $ f $ many $ (,) <$> (k <* symbol ":") <*> v
 
 -- https://spec.graphql.org/June2018/#sec-Names
 name :: Parser Text
@@ -129,11 +129,14 @@ signed = L.signed empty
 
 -- http://spec.graphql.org/June2018/#sec-Int-Value
 intVal :: Parser Int
-intVal = label "IntVal" $ lexeme $ (signed L.decimal <* notFollowedBy (symbol "."))
+intVal = label "IntVal" $ lexeme $ signed L.decimal <* notFollowedBy (symbol ".")
 
 -- http://spec.graphql.org/June2018/#sec-Float-Value
 doubleVal :: Parser Double
-doubleVal = label "DoubleVal" $ lexeme $ (toRealFloat <$> signed L.scientific) <|> signed L.float
+doubleVal = label "DoubleVal" $ lexeme $ choice
+  [ toRealFloat <$> signed L.scientific
+  , signed L.float
+  ]
 
 -- http://spec.graphql.org/June2018/#SourceCharacter
 sourceChar
@@ -172,7 +175,7 @@ symbol' :: Text -> Parser Text
 symbol' = L.symbol sc'
 
 lineString :: Parser Text
-lineString = lexeme $ (Text.pack <$> between_ (symbol' "\"") (many chars))
+lineString = label "InlineString" $ lexeme $ Text.pack <$> between_ (symbol' "\"") (many chars)
   where
     chars = choice
       [ escapeSequence
@@ -180,7 +183,7 @@ lineString = lexeme $ (Text.pack <$> between_ (symbol' "\"") (many chars))
       ]
 
 blockString :: Parser Text
-blockString = lexeme $ do
+blockString = label "BlockString" $ lexeme $ do
   void $ delim
   pos   <- L.indentLevel
   lines <- manyTill chars delim `sepBy` try lineTerminator
