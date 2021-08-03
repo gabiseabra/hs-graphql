@@ -30,7 +30,7 @@ module GraphQL.AST.Lexer
 import Control.Applicative ((<|>), empty)
 import Control.Monad (void)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec, label, try, choice, optional, between, many, manyTill, some, oneOf, satisfy, takeP, chunkToTokens, notFollowedBy, sepBy, unPos)
+import Text.Megaparsec (Parsec, label, try, choice, optional, between, many, manyTill, some, oneOf, satisfy, takeP, chunkToTokens, notFollowedBy)
 import Text.Megaparsec.Char (string, char)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Char (chr, digitToInt)
@@ -152,6 +152,7 @@ sourceChar
   : '\x000A'
   : '\x000D'
   : ['\x0020' .. '\xFFFF']
+  `except` "\""
 
 except :: String -> String -> String
 except = foldr List.delete
@@ -187,28 +188,17 @@ lineString = label "InlineString" $ lexeme $ Text.pack <$> between_ (symbol' "\"
   where
     chars = choice
       [ escapeSequence
-      , satisfy (`elem` (sourceChar `except` "\n\""))
+      , satisfy (`elem` (sourceChar `except` "\n"))
       ]
 
 blockString :: Parser Text
-blockString = label "BlockString" $ lexeme $ do
-  void $ delim
-  pos   <- L.indentLevel
-  lines <- manyTill chars delim `sepBy` try lineTerminator
-  pure $ Text.pack $ foldTrim (unPos pos) lines
+blockString = label "BlockString" $ lexeme $ delim >> Text.pack <$> manyTill chars delim
   where
     delim = symbol' "\"\"\""
     chars = choice
       [ escapeSequence
       , satisfy (`elem` sourceChar)
       ]
-    indentLevel :: String -> Int
-    indentLevel "" = maxBound
-    indentLevel a = length $ List.takeWhile (`elem` ws) a
-    minIndent :: Int -> [String] -> Int
-    minIndent = foldr (min . indentLevel)
-    foldTrim :: Int -> [String] -> String
-    foldTrim i0 as = foldMap ((<> "\n") . List.drop (minIndent i0 as)) as
 
 stringVal :: Parser Text
 stringVal = label "StringVal" $ choice [ blockString, lineString ] <* sc

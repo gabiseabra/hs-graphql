@@ -58,7 +58,7 @@ data VariableAssignment
   | Var Text
   | StrVal Text
   | IntVal Int
-  | NumVal Double
+  | DoubleVal Double
   | BoolVal Bool
   | EnumVal Text
   | ListVal [VariableAssignment]
@@ -71,7 +71,7 @@ val = label "Value" $ choice
   , Var       <$> L.varName
   , StrVal    <$> L.stringVal
   , IntVal    <$> try L.intVal
-  , NumVal    <$> L.doubleVal
+  , DoubleVal <$> L.doubleVal
   , BoolVal   <$> L.boolVal
   , EnumVal   <$> L.enumVal
   , ListVal   <$> L.brackets (many val)
