@@ -83,13 +83,13 @@ instance Eq a => Eq1 (ValueF a) where
   liftEq _ _ _                           = False
 
 instance Show a => Show1 (ValueF a) where
-  liftShowsPrec _  _  _ NullVal        = const $ "NullVal"
-  liftShowsPrec _  _  _ (Var a)        = const $ "Var " <> show a
-  liftShowsPrec _  _  _ (StrVal a)     = const $ "StrVal " <> show a
-  liftShowsPrec _  _  _ (IntVal a)     = const $ "IntVal " <> show a
-  liftShowsPrec _  _  _ (DoubleVal a)  = const $ "DoubleVal " <> show a
-  liftShowsPrec _  _  _ (BoolVal a)    = const $ "BoolVal " <> show a
-  liftShowsPrec _  _  _ (EnumVal a)    = const $ "EnumVal " <> show a
+  liftShowsPrec _  _  _ NullVal        = (<>) $ "NullVal"
+  liftShowsPrec _  _  _ (Var a)        = (<>) $ "Var " <> show a
+  liftShowsPrec _  _  _ (StrVal a)     = (<>) $ "StrVal " <> show a
+  liftShowsPrec _  _  _ (IntVal a)     = (<>) $ "IntVal " <> show a
+  liftShowsPrec _  _  _ (DoubleVal a)  = (<>) $ "DoubleVal " <> show a
+  liftShowsPrec _  _  _ (BoolVal a)    = (<>) $ "BoolVal " <> show a
+  liftShowsPrec _  _  _ (EnumVal a)    = (<>) $ "EnumVal " <> show a
   liftShowsPrec sp sl d (ListVal as)   = showsUnaryWith (liftShowsPrec sp sl) "ListVal" d as
   liftShowsPrec sp sl d (ObjectVal as) = showsUnaryWith (liftShowsPrec sp sl) "ObjectVal" d as
 
@@ -128,7 +128,7 @@ instance Eq1 SelectionNodeF where
 
 instance Show1 SelectionNodeF where
   liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
-  liftShowsPrec sp sl d (FragmentSpread a)   = const $ "FragmentSpread " <> show a
+  liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
 
 type Value'RAW = Cofree (ValueF Name) Pos
