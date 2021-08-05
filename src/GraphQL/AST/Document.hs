@@ -99,7 +99,7 @@ instance
   , Base r ~ ValueF a
   ) => JSON.ToJSON (ValueF a r) where
   toJSON NullVal       = JSON.Null
-  toJSON (Var a)    = JSON.toJSON a
+  toJSON (Var a)       = JSON.toJSON a
   toJSON (StrVal a)    = JSON.toJSON a
   toJSON (IntVal a)    = JSON.toJSON a
   toJSON (DoubleVal a) = JSON.toJSON a

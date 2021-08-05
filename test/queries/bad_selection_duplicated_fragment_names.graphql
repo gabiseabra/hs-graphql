@@ -1,0 +1,6 @@
+query {
+  a { ...A }
+}
+
+fragment A on A { a0 }
+fragment A on B { b0 }

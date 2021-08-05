@@ -40,14 +40,13 @@ parseTest (JSON.Object i) f = document i f <$> Text.readFile f
 
 spec :: Spec
 spec = describe "document" $ do
-  it "test/queries/good_input.graphql" $ do
+  it "test/queries/good_input.graphql — with good input" $ do
     let
       someVarType = NamedType "SomeType"
       nonNullVarType = NonNullType $ NamedType "SomeType"
       listVarType = NonNullType $ ListType $ NonNullType $ NamedType "Int"
       input = object
-        [ "someVar" .= (Nothing :: Maybe Int)
-        , "nonNullVar" .= (420 :: Int)
+        [ "nonNullVar" .= (420 :: Int)
         , "listVar" .= ([6, 9] :: [Int])
         ]
       vars'c = Map.fromList
@@ -69,7 +68,7 @@ spec = describe "document" $ do
             ]
           )
         , ("objectVal", (pos 16 20, Nothing) :< ( ObjectVal $ Map.fromList
-            [ ("someVal", (pos 16 35, Just someVarType) :< Var (JSON.toJSON (Nothing :: Maybe Int)))
+            [ ("someVal", (pos 16 35, Just someVarType) :< NullVal)
             , ("nonNullVal", (pos 17 35, Just nonNullVarType) :< Var (JSON.toJSON (420 :: Int)))
             , ("listVal", (pos 18 35, Just listVarType) :< Var (JSON.toJSON ([6, 9] :: [Int])))
             ] )
@@ -82,6 +81,48 @@ spec = describe "document" $ do
         , (pos 7 3) :< NodeF (Field Nothing Nothing "b" mempty)  []
         , (pos 8 3) :< NodeF (Field Nothing Nothing "c" vars'c)  []
         ]
-    parseTest input "test/queries/good_input.graphql" `shouldReturn` Right doc
-
-
+    parseTest input "test/queries/good_input.graphql" `shouldReturn`
+      Right doc
+  it "test/queries/good_input.graphql — with bad input" $ do
+    let
+      input = object
+        [ "nonNullVar" .= (Nothing :: Maybe Int)
+        , "listVar" .= ([6, 9] :: [Int])
+        ]
+    parseTest input "test/queries/good_input.graphql" `shouldReturn`
+      validationError [pos 3 16] "Required variable $nonNullVar is missing from input"
+  it "test/queries/bad_input_undefined_variable.graphql" $ do
+    parseTest (object []) "test/queries/bad_input_undefined_variable.graphql" `shouldReturn`
+      validationError [pos 2 12] "Variable $someVar is not defined"
+  it "test/queries/good_selection.graphql" $ do
+    let
+      vars'b = Map.fromList
+        [ ("var", (pos 3 10, Nothing) :< IntVal 420)
+        ]
+      doc = Document Query Nothing
+        [ (pos 2 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
+        , (pos 3 3) :< NodeF (Field Nothing Nothing "b" vars'b)  []
+        , (pos 4 3) :< NodeF (Field Nothing (Just "alias") "c" mempty)
+          [ (pos 4 14) :< NodeF (Field Nothing Nothing "c0" mempty) []
+          ]
+        , (pos 5 3) :< NodeF (Field Nothing Nothing "ab" mempty)
+          [ (pos 6 15) :< NodeF (Field (Just "A") Nothing "a0" mempty) []
+          , (pos 12 3) :< NodeF (Field (Just "B") Nothing "b0" mempty) []
+          , (pos 17 3) :< NodeF (Field (Just "B") Nothing "b1" mempty)
+            [ (pos 17 8) :< NodeF (Field Nothing Nothing "x" mempty) []
+            ]
+          ]
+        ]
+    parseTest (object []) "test/queries/good_selection.graphql" `shouldReturn` Right doc
+  it "test/queries/bad_selection_unused_fragment.graphql" $ do
+    parseTest (object []) "test/queries/bad_selection_unused_fragment.graphql" `shouldReturn`
+      validationError [pos 3 10, pos 4 10] "Document has unused fragments: A, B"
+  it "test/queries/bad_selection_missing_operation.graphql" $ do
+    parseTest (object []) "test/queries/bad_selection_missing_operation.graphql" `shouldReturn`
+      parseError [] "Expected at least one root operation"
+  it "test/queries/bad_selection_fragment_cycle.graphql" $ do
+    parseTest (object []) "test/queries/bad_selection_fragment_cycle.graphql" `shouldReturn`
+      validationError [pos 12 11] "Cycle in fragment A0"
+  it "test/queries/bad_selection_duplicated_fragment_names.graphql" $ do
+    parseTest (object []) "test/queries/bad_selection_duplicated_fragment_names.graphql" `shouldReturn`
+      parseError [pos 5 10] "Duplicated fragment names: A"

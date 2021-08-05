@@ -17,6 +17,9 @@ import GraphQL.Error (V)
 import qualified GraphQL.Error as E
 
 import Control.Comonad.Cofree (Cofree(..))
+import Control.Monad.Trans (lift)
+import Control.Monad.State.Lazy (StateT(..))
+import qualified Control.Monad.State.Lazy as ST
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (first, second)
 import Data.HashMap.Strict (HashMap)
@@ -69,29 +72,29 @@ eraseVars i vars (pos :< ListVal val)   = ((pos, Nothing) :<) . ListVal <$> mapM
 eraseVars i vars (pos :< ObjectVal val) = ((pos, Nothing) :<) . ObjectVal <$> mapM (eraseVars i vars) val
 eraseVars i vars (pos :< Var k)      = case (Map.lookup k vars, Map.lookup k i) of
   (Nothing, _) -> validationError [pos] $ "Variable $" <> k <> " is not defined"
-  (Just var@(ty, _, _), Nothing) ->
-    let err = validationError [pos] $ "Required variable $" <> k <> " is missing from input"
+  (Just var@(ty, _, varPos), Nothing) ->
+    let err = validationError [varPos] $ "Required variable $" <> k <> " is missing from input"
     in maybe err (fmap (att (pos, Just ty)) . eraseVars i vars) $ defValue var
   (Just (ty, _, _), Just val) -> pure $ (pos, Just ty) :< Var val
 
 eraseFragmentsWith :: forall a
   .  (Field'RAW -> V a)
   -> HashMap Name Fragment'RAW
-  -> Set Name
   -> SelectionNode'RAW
-  -> V (Set Name, [Cofree (TreeF a) Pos])
-eraseFragmentsWith f frags visited (pos:<Node a as) = do
-  a'              <- f a
-  (visited', as') <- foldMapM (eraseFragmentsWith f frags visited) as
-  pure (visited', [pos :< NodeF a' as'])
-eraseFragmentsWith f frags visited (pos:<InlineFragment t as) =
-  foldMapM (eraseFragmentsWith f frags visited) as
-eraseFragmentsWith f frags visited (pos:<FragmentSpread t) = do
+  -> StateT (Set Name) V [Cofree (TreeF a) Pos]
+eraseFragmentsWith f frags (pos :< Node a as)
+  = pure . (pos :<) <$> (NodeF <$> lift (f a) <*> foldMapM (eraseFragmentsWith f frags) as)
+eraseFragmentsWith f frags (pos :< InlineFragment t as)
+  = foldMapM (eraseFragmentsWith f frags) as
+eraseFragmentsWith f frags (pos:<FragmentSpread t) = do
+  visited <- ST.get
   if Set.member t visited
-    then validationError [pos] $ "Cycle in fragment " <> t
+    then lift $ validationError [pos] $ "Cycle in fragment " <> t
     else  case Map.lookup t frags of
-      Nothing         -> validationError [pos] $ "Fragment " <> t <> " is not defined"
-      Just (_, as, _) -> foldMapM (eraseFragmentsWith f frags $ Set.insert t visited) as
+      Nothing         -> lift $ validationError [pos] $ "Fragment " <> t <> " is not defined"
+      Just (_, as, _) -> do
+        ST.put (Set.insert t visited)
+        foldMapM (eraseFragmentsWith f frags) as
 
 eraseSelectionWith :: forall a
   . (Field'RAW -> V a)
@@ -99,7 +102,7 @@ eraseSelectionWith :: forall a
   -> [SelectionNode'RAW]
   -> V [Cofree (TreeF a) Pos]
 eraseSelectionWith f frags s = do
-  (visited, s') <- foldMapM (eraseFragmentsWith f frags mempty) s
+  (s', visited) <- runStateT (foldMapM (eraseFragmentsWith f frags) s) mempty
   let unusedFrags = Map.filterWithKey (\k _ -> Set.notMember k visited) frags
   if length visited == length frags
     then pure s'
@@ -112,8 +115,8 @@ validateField input vars (ty, alias, name, val) = Field ty alias name <$> traver
 
 validateDocument :: Input -> RootNodes'RAW -> V Document
 validateDocument input ((opType, opName, vars, selection, _), frags) =
-  let input' = Map.filter (== JSON.Null) input
-  in Document opType opName <$> eraseSelectionWith (validateField input vars) frags selection
+  let input' = Map.filter (/= JSON.Null) input
+  in Document opType opName <$> eraseSelectionWith (validateField input' vars) frags selection
 
 parseError :: [Pos] -> Text -> Parser a
 parseError pos msg = customFailure $ E.ParseError pos msg
@@ -124,7 +127,8 @@ foldMapM :: Applicative m => Monoid b => Foldable f => (a -> m b) -> f a -> m b
 foldMapM f = foldr (\a bs -> mappend <$> f a <*> bs) (pure mempty)
 
 dupesWith :: (a -> a -> Bool) -> [a] -> [a]
-dupesWith f (x : xs) = filter (f x) xs ++ dupesWith f xs
+dupesWith _ [] = []
+dupesWith f (x:xs) = filter (f x) xs ++ dupesWith f xs
 
 uniq :: (Eq a, Ord a) => [a] -> [a]
 uniq = Set.toList . Set.fromList
