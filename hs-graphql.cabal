@@ -57,10 +57,12 @@ test-suite hs-graphql-test
       base >= 4.7 && < 5
     , hspec
     , hs-graphql
+    , free
     , aeson
     , data-fix
     , recursion-schemes
     , text
+    , unordered-containers
     , megaparsec
 
 source-repository head

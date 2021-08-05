@@ -11,7 +11,8 @@ module GraphQL.AST.Document
   ( Typename
   , Name
   , Input
-  , Location(..)
+  , Pos(..)
+  , mkPos
   , OperationType(..)
   , ValueF(..)
   , TypeDefinition(..)
@@ -37,7 +38,8 @@ import Data.Fix (Fix)
 import Data.Functor.Base (TreeF)
 import Data.HashMap.Strict (HashMap)
 import Data.Functor.Foldable (Base, Recursive(..))
-import Text.Megaparsec.Pos (SourcePos)
+import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith)
+import qualified Text.Megaparsec.Pos as P
 
 type Typename = Text
 
@@ -45,8 +47,10 @@ type Name = Text
 
 type Input = JSON.Object
 
-data Location = Span SourcePos SourcePos
-  deriving (Eq, Show, Ord)
+data Pos = Pos { line :: Int, column :: Int } deriving (Eq, Show, Ord)
+
+mkPos :: P.SourcePos -> Pos
+mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
 
 data OperationType
   = Query
@@ -56,7 +60,7 @@ data OperationType
 
 data ValueF a r
   = NullVal
-  | VarVal a
+  | Var a
   | StrVal Text
   | IntVal Int
   | DoubleVal Double
@@ -66,13 +70,36 @@ data ValueF a r
   | ObjectVal (HashMap Name r)
   deriving (Functor, Foldable, Traversable)
 
+instance Eq a => Eq1 (ValueF a) where
+  liftEq _ NullVal        NullVal        = True
+  liftEq _ (Var a)        (Var b)        = a == b
+  liftEq _ (StrVal a)     (StrVal b)     = a == b
+  liftEq _ (IntVal a)     (IntVal b)     = a == b
+  liftEq _ (DoubleVal a)  (DoubleVal b)  = a == b
+  liftEq _ (BoolVal a)    (BoolVal b)    = a == b
+  liftEq _ (EnumVal a)    (EnumVal b)    = a == b
+  liftEq f (ListVal as)   (ListVal bs)   = liftEq f as bs
+  liftEq f (ObjectVal as) (ObjectVal bs) = liftEq f as bs
+  liftEq _ _ _                           = False
+
+instance Show a => Show1 (ValueF a) where
+  liftShowsPrec _  _  _ NullVal        = const $ "NullVal"
+  liftShowsPrec _  _  _ (Var a)        = const $ "Var " <> show a
+  liftShowsPrec _  _  _ (StrVal a)     = const $ "StrVal " <> show a
+  liftShowsPrec _  _  _ (IntVal a)     = const $ "IntVal " <> show a
+  liftShowsPrec _  _  _ (DoubleVal a)  = const $ "DoubleVal " <> show a
+  liftShowsPrec _  _  _ (BoolVal a)    = const $ "BoolVal " <> show a
+  liftShowsPrec _  _  _ (EnumVal a)    = const $ "EnumVal " <> show a
+  liftShowsPrec sp sl d (ListVal as)   = showsUnaryWith (liftShowsPrec sp sl) "ListVal" d as
+  liftShowsPrec sp sl d (ObjectVal as) = showsUnaryWith (liftShowsPrec sp sl) "ObjectVal" d as
+
 instance
   ( JSON.ToJSON a
   , Recursive r
   , Base r ~ ValueF a
   ) => JSON.ToJSON (ValueF a r) where
   toJSON NullVal       = JSON.Null
-  toJSON (VarVal a)    = JSON.toJSON a
+  toJSON (Var a)    = JSON.toJSON a
   toJSON (StrVal a)    = JSON.toJSON a
   toJSON (IntVal a)    = JSON.toJSON a
   toJSON (DoubleVal a) = JSON.toJSON a
@@ -93,12 +120,23 @@ data SelectionNodeF r
   | InlineFragment Typename [r]
   deriving (Functor, Foldable, Traversable)
 
-type Value'RAW = Cofree (ValueF Name) Location
+instance Eq1 SelectionNodeF where
+  liftEq f (Node a l)           (Node b r)           = a == b && liftEq f l r
+  liftEq f (FragmentSpread a)   (FragmentSpread b)   = a == b
+  liftEq f (InlineFragment a l) (InlineFragment b r) = a == b && liftEq f l r
+  liftEq _ _ _                           = False
+
+instance Show1 SelectionNodeF where
+  liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
+  liftShowsPrec sp sl d (FragmentSpread a)   = const $ "FragmentSpread " <> show a
+  liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
+
+type Value'RAW = Cofree (ValueF Name) Pos
 
 type Variable'RAW
   = ( TypeDefinition
     , Maybe Value'RAW
-    , Location
+    , Pos
     )
 
 type Field'RAW
@@ -108,12 +146,12 @@ type Field'RAW
     , HashMap Name Value'RAW -- input values
     )
 
-type SelectionNode'RAW = Cofree SelectionNodeF Location
+type SelectionNode'RAW = Cofree SelectionNodeF Pos
 
 type Fragment'RAW
   = ( Typename
     , [SelectionNode'RAW]
-    , Location
+    , Pos
     )
 
 type Operation'RAW
@@ -121,7 +159,7 @@ type Operation'RAW
     , Maybe Name
     , HashMap Name Variable'RAW
     , [SelectionNode'RAW]
-    , Location
+    , Pos
     )
 
 type RootNodes'RAW = (Operation'RAW, HashMap Name Fragment'RAW)
@@ -134,15 +172,15 @@ data Field
     , alias :: Maybe Name
     , name :: Name
     , input :: HashMap Name Value
-    }
+    } deriving (Eq, Show)
 
 data Document
   = Document
     { operation :: OperationType
     , name :: Maybe Name
     , selection :: [Selection]
-    }
+    } deriving (Eq, Show)
 
-type Value = Cofree (ValueF JSON.Value) (Location, Maybe TypeDefinition)
+type Value = Cofree (ValueF JSON.Value) (Pos, Maybe TypeDefinition)
 
-type Selection = Cofree (TreeF Field) Location
+type Selection = Cofree (TreeF Field) Pos

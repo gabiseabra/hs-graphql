@@ -1,19 +1,22 @@
 module GraphQL.Error where
 
-import GraphQL.AST.Document (Name, Location)
+import GraphQL.AST.Document (Name, Pos)
 import Data.Text (Text)
 import Data.List.NonEmpty (NonEmpty(..))
+import Text.Megaparsec.Error (ShowErrorComponent(..))
 
 data GraphQLError
-  = ParseError [Location] Text
-  | ValidationError [Location] Text
-  | ExecutionError Location Name Text
+  = ParseError [Pos] Text
+  | ValidationError [Pos] Text
+  | ExecutionError Pos [Name] Text
   deriving (Eq, Show, Ord)
+
+instance ShowErrorComponent GraphQLError where showErrorComponent = show
 
 type V = Either (NonEmpty GraphQLError)
 
-validationError :: [Location] -> Text -> V a
-validationError loc msg = Left $ ValidationError loc msg :| []
+validationError :: [Pos] -> Text -> V a
+validationError pos msg = Left $ ValidationError pos msg :| []
 
-parseError :: [Location] -> Text -> V a
-parseError loc msg = Left $ ParseError loc msg :| []
+parseError :: [Pos] -> Text -> V a
+parseError pos msg = Left $ ParseError pos msg :| []

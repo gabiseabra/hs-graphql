@@ -30,13 +30,13 @@ import Text.Megaparsec (customFailure)
 
 validateVarP' :: Name -> TypeDefinition -> Value'RAW -> Parser ()
 validateVarP' k (ListType t) (_ :< ListVal as) = foldMap (validateVarP' k t) as
-validateVarP' k (ListType t) (loc :< _) = parseError [loc] $ "Non list value in list variable $" <> k
-validateVarP' k (NonNullType t) (loc :< NullVal) = parseError [loc] $ "Null default value in required variable $" <> k
+validateVarP' k (ListType t) (pos :< _) = parseError [pos] $ "Non list value in list variable $" <> k
+validateVarP' k (NonNullType t) (pos :< NullVal) = parseError [pos] $ "Null default value in required variable $" <> k
 validateVarP' k (NonNullType t) v = validateVarP' k t v
-validateVarP' k _ v@(loc :< VarVal k') =
+validateVarP' k _ v@(pos :< Var k') =
   if k /= k'
     then pure ()
-    else parseError [loc] $ "Self reference in default value of $" <> k
+    else parseError [pos] $ "Self reference in default value of $" <> k
 validateVarP' _ _ v = pure ()
 
 validateVarP :: Name -> Variable'RAW -> Parser Variable'RAW
@@ -54,50 +54,50 @@ validateRootNodesP ((op:_), frags) =
   where
     fragsMap = Map.fromList frags
     dupes = dupesWith (\a b -> fst a == fst b) frags
-    locs  = fmap (loc . snd) dupes
+    locs  = fmap (pos . snd) dupes
     names = uniq $ fmap fst dupes
-    loc (_,_,a) = a
+    pos (_,_,a) = a
 
 eraseVars :: Input -> HashMap Name Variable'RAW -> Value'RAW -> V Value
-eraseVars _ _    (loc :< NullVal)       = pure $ (loc, Nothing) :< NullVal
-eraseVars _ _    (loc :< StrVal val)    = pure $ (loc, Nothing) :< (StrVal val)
-eraseVars _ _    (loc :< IntVal val)    = pure $ (loc, Nothing) :< (IntVal val)
-eraseVars _ _    (loc :< DoubleVal val) = pure $ (loc, Nothing) :< (DoubleVal val)
-eraseVars _ _    (loc :< BoolVal val)   = pure $ (loc, Nothing) :< (BoolVal val)
-eraseVars _ _    (loc :< EnumVal val)   = pure $ (loc, Nothing) :< (EnumVal val)
-eraseVars i vars (loc :< ListVal val)   = ((loc, Nothing) :<) . ListVal <$> mapM (eraseVars i vars) val
-eraseVars i vars (loc :< ObjectVal val) = ((loc, Nothing) :<) . ObjectVal <$> mapM (eraseVars i vars) val
-eraseVars i vars (loc :< VarVal k)      = case (Map.lookup k vars, Map.lookup k i) of
-  (Nothing, _) -> validationError [loc] $ "Variable $" <> k <> " is not defined"
+eraseVars _ _    (pos :< NullVal)       = pure $ (pos, Nothing) :< NullVal
+eraseVars _ _    (pos :< StrVal val)    = pure $ (pos, Nothing) :< (StrVal val)
+eraseVars _ _    (pos :< IntVal val)    = pure $ (pos, Nothing) :< (IntVal val)
+eraseVars _ _    (pos :< DoubleVal val) = pure $ (pos, Nothing) :< (DoubleVal val)
+eraseVars _ _    (pos :< BoolVal val)   = pure $ (pos, Nothing) :< (BoolVal val)
+eraseVars _ _    (pos :< EnumVal val)   = pure $ (pos, Nothing) :< (EnumVal val)
+eraseVars i vars (pos :< ListVal val)   = ((pos, Nothing) :<) . ListVal <$> mapM (eraseVars i vars) val
+eraseVars i vars (pos :< ObjectVal val) = ((pos, Nothing) :<) . ObjectVal <$> mapM (eraseVars i vars) val
+eraseVars i vars (pos :< Var k)      = case (Map.lookup k vars, Map.lookup k i) of
+  (Nothing, _) -> validationError [pos] $ "Variable $" <> k <> " is not defined"
   (Just var@(ty, _, _), Nothing) ->
-    let err = validationError [loc] $ "Required variable $" <> k <> " is missing from input"
-    in maybe err (fmap (att (loc, Just ty)) . eraseVars i vars) $ defValue var
-  (Just (ty, _, _), Just val) -> pure $ (loc, Just ty) :< VarVal val
+    let err = validationError [pos] $ "Required variable $" <> k <> " is missing from input"
+    in maybe err (fmap (att (pos, Just ty)) . eraseVars i vars) $ defValue var
+  (Just (ty, _, _), Just val) -> pure $ (pos, Just ty) :< Var val
 
 eraseFragmentsWith :: forall a
   .  (Field'RAW -> V a)
   -> HashMap Name Fragment'RAW
   -> Set Name
   -> SelectionNode'RAW
-  -> V (Set Name, [Cofree (TreeF a) Location])
-eraseFragmentsWith f frags visited (loc:<Node a as) = do
+  -> V (Set Name, [Cofree (TreeF a) Pos])
+eraseFragmentsWith f frags visited (pos:<Node a as) = do
   a'              <- f a
   (visited', as') <- foldMapM (eraseFragmentsWith f frags visited) as
-  pure (visited', [loc :< NodeF a' as'])
-eraseFragmentsWith f frags visited (loc:<InlineFragment t as) =
+  pure (visited', [pos :< NodeF a' as'])
+eraseFragmentsWith f frags visited (pos:<InlineFragment t as) =
   foldMapM (eraseFragmentsWith f frags visited) as
-eraseFragmentsWith f frags visited (loc:<FragmentSpread t) = do
+eraseFragmentsWith f frags visited (pos:<FragmentSpread t) = do
   if Set.member t visited
-    then validationError [loc] $ "Cycle in fragment " <> t
+    then validationError [pos] $ "Cycle in fragment " <> t
     else  case Map.lookup t frags of
-      Nothing         -> validationError [loc] $ "Fragment " <> t <> " is not defined"
+      Nothing         -> validationError [pos] $ "Fragment " <> t <> " is not defined"
       Just (_, as, _) -> foldMapM (eraseFragmentsWith f frags $ Set.insert t visited) as
 
 eraseSelectionWith :: forall a
   . (Field'RAW -> V a)
   -> HashMap Name Fragment'RAW
   -> [SelectionNode'RAW]
-  -> V [Cofree (TreeF a) Location]
+  -> V [Cofree (TreeF a) Pos]
 eraseSelectionWith f frags s = do
   (visited, s') <- foldMapM (eraseFragmentsWith f frags mempty) s
   let unusedFrags = Map.filterWithKey (\k _ -> Set.notMember k visited) frags
@@ -115,8 +115,8 @@ validateDocument input ((opType, opName, vars, selection, _), frags) =
   let input' = Map.filter (== JSON.Null) input
   in Document opType opName <$> eraseSelectionWith (validateField input vars) frags selection
 
-parseError :: [Location] -> Text -> Parser a
-parseError loc msg = customFailure $ E.ParseError loc msg
+parseError :: [Pos] -> Text -> Parser a
+parseError pos msg = customFailure $ E.ParseError pos msg
 
 validationError = E.validationError
 
@@ -136,7 +136,7 @@ isNullable _                     = True
 defValue :: Variable'RAW -> Maybe Value'RAW
 defValue (_, Just a, _)              = Just a
 defValue (NonNullType _, Nothing, _) = Nothing
-defValue (_, _, loc)                 = Just $ loc:<NullVal
+defValue (_, _, pos)                 = Just $ pos:<NullVal
 
 att :: a -> Cofree f a -> Cofree f a
 att a (_:<f) = (a:<f)

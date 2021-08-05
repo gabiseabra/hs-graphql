@@ -15,7 +15,7 @@ module GraphQL.AST.Lexer
   , foldE
   , manyE
   , optional_
-  , withLocation
+  , withPos
   , (<@>)
   , braces
   , parens
@@ -34,7 +34,7 @@ module GraphQL.AST.Lexer
   where
 
 import GraphQL.Error (GraphQLError(..))
-import GraphQL.AST.Document (Location(..))
+import GraphQL.AST.Document (Pos(..), Pos(..), mkPos)
 
 import Control.Applicative ((<|>), empty)
 import Control.Monad (void)
@@ -136,18 +136,17 @@ optional_ = fmap (fromMaybe mempty) . optional
 between_ :: Parser sep -> Parser a -> Parser a
 between_ a = between a a
 
-withLocation' :: (Location -> a -> b) -> Parser a -> Parser b
-withLocation' f p = do
-  p0 <- getSourcePos
-  a  <- p
-  p1 <- getSourcePos
-  pure $ f (Span p0 p1) a
+withPos' :: (Pos -> a -> b) -> Parser a -> Parser b
+withPos' f p = do
+  pos <- mkPos <$> getSourcePos
+  a   <- p
+  pure $ f pos a
 
-withLocation :: Parser a -> Parser (Location, a)
-withLocation = withLocation' (,)
+withPos :: Parser a -> Parser (Pos, a)
+withPos = withPos' (,)
 
-(<@>) :: Parser a -> (Location -> a -> b) -> Parser b
-(<@>) = flip withLocation'
+(<@>) :: Parser a -> (Pos -> a -> b) -> Parser b
+(<@>) = flip withPos'
 
 foldWithRecovery :: MonadParsec e s m => (a -> ParseError s e -> m a) -> (a -> m a) -> a -> m a
 foldWithRecovery r f = let go a = withRecovery (r a) (go =<< f a) in go
@@ -173,9 +172,9 @@ argsE'
   -> (Text -> a -> Parser b)
   -> Parser [(Text, b)]
 argsE' p pK pV f = p $ manyE $ \kv -> do
-  (loc, k) <- withLocation $ pK <* symbol ":"
+  (pos, k) <- withPos $ pK <* symbol ":"
   if List.any ((== k) . fst) kv
-    then customFailure $ ParseError [loc] $ "Duplicated argument " <> k
+    then customFailure $ ParseError [pos] $ "Duplicated argument " <> k
     else (,) <$> pure k <*> (f k =<< pV)
 
 argsE

@@ -7,7 +7,7 @@ module GraphQL.AST
   ( Typename
   , Name
   , Input
-  , Location(..)
+  , Pos(..)
   , OperationType(..)
   , TypeDefinition(..)
   , ValueF(..)
@@ -24,7 +24,7 @@ import GraphQL.AST.Parser
 import GraphQL.Error
 
 import Control.Monad ((<=<))
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, second)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Set as Set
@@ -45,17 +45,17 @@ document :: Input -> FilePath -> Text -> V Document
 document input path = validateDocument input <=< first err . parse parseRootNodes path
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError
-err e = ne $ foldMap formatParseError errorsWithPos
+err e = ne $ foldMap (formatParseError . second mkPos) errorsWithPos
   where
     errorsWithPos = fst $ attachSourcePos errorOffset (bundleErrors e) (bundlePosState e)
     ne [] = ParseError [] "Unknown parse error" :| []
     ne (a:as) = a :| as
 
-formatParseError :: (ParseError Text GraphQLError, SourcePos) -> [GraphQLError]
+formatParseError :: (ParseError Text GraphQLError, Pos) -> [GraphQLError]
 formatParseError (FancyError _ e, pos) = fmap (formatFancyError . (,pos)) $ Set.elems e
 formatParseError (TrivialError _ actual ref, pos)
   = pure
-  $ ParseError [Span pos pos]
+  $ ParseError [pos]
   $ Text.intercalate " "
   $ [ maybe "" unexpected actual
     , "Expected: "
@@ -65,10 +65,10 @@ formatParseError (TrivialError _ actual ref, pos)
     ]
   where unexpected a = "Unexpected " <> showErrorItem a <> "."
 
-formatFancyError :: (ErrorFancy GraphQLError, SourcePos) -> GraphQLError
+formatFancyError :: (ErrorFancy GraphQLError, Pos) -> GraphQLError
 formatFancyError (ErrorCustom e, _) = e
 formatFancyError (ErrorIndentation ord ref actual, pos)
-  = ParseError [Span pos pos]
+  = ParseError [pos]
   $ Text.intercalate " "
   $ [ "Incorrect indentation: got"
     ,  Text.pack (show $ unPos actual) <> ","
@@ -77,7 +77,7 @@ formatFancyError (ErrorIndentation ord ref actual, pos)
     , Text.pack (show $ unPos ref)
     ]
 formatFancyError (ErrorFail msg, pos)
-  = ParseError [Span pos pos]
+  = ParseError [pos]
   $ Text.pack msg
 
 showErrorItem :: ErrorItem Char -> Text
