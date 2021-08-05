@@ -1,5 +1,6 @@
 {-# LANGUAGE
     DuplicateRecordFields
+  , TypeFamilies
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
@@ -35,6 +36,7 @@ import Data.Text (Text)
 import Data.Fix (Fix)
 import Data.Functor.Base (TreeF)
 import Data.HashMap.Strict (HashMap)
+import Data.Functor.Foldable (Base, Recursive(..))
 import Text.Megaparsec.Pos (SourcePos)
 
 type Typename = Text
@@ -63,6 +65,21 @@ data ValueF a r
   | ListVal [r]
   | ObjectVal (HashMap Name r)
   deriving (Functor, Foldable, Traversable)
+
+instance
+  ( JSON.ToJSON a
+  , Recursive r
+  , Base r ~ ValueF a
+  ) => JSON.ToJSON (ValueF a r) where
+  toJSON NullVal       = JSON.Null
+  toJSON (VarVal a)    = JSON.toJSON a
+  toJSON (StrVal a)    = JSON.toJSON a
+  toJSON (IntVal a)    = JSON.toJSON a
+  toJSON (DoubleVal a) = JSON.toJSON a
+  toJSON (BoolVal a)   = JSON.toJSON a
+  toJSON (EnumVal a)   = JSON.toJSON a
+  toJSON (ListVal r)   = JSON.toJSON $ fmap (JSON.toJSON . project) r
+  toJSON (ObjectVal r) = JSON.Object $ fmap (JSON.toJSON . project) r
 
 data TypeDefinition
   = ListType TypeDefinition
