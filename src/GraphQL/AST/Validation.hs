@@ -5,7 +5,11 @@
   , ScopedTypeVariables
 #-}
 
-module GraphQL.AST.Validation where
+module GraphQL.AST.Validation
+  ( validateVarP
+  , validateRootNodesP
+  , validateDocument
+  ) where
 
 import GraphQL.AST.Document
 import GraphQL.AST.Lexer (Parser)
@@ -103,8 +107,16 @@ eraseSelectionWith f frags s = do
           $ "Document has unused fragments: "
           <> Text.intercalate ", " (Map.keys unusedFrags)
 
+validateField :: Input -> HashMap Name Variable'RAW -> Field'RAW -> V Field
+validateField input vars (ty, alias, name, val) = Field ty alias name <$> traverse (eraseVars input vars) val
+
+validateDocument :: Input -> RootNodes'RAW -> V Document
+validateDocument input ((opType, opName, vars, selection, _), frags) =
+  let input' = Map.filter (== JSON.Null) input
+  in Document opType opName <$> eraseSelectionWith (validateField input vars) frags selection
+
 parseError :: [Location] -> Text -> Parser a
-parseError loc msg = either customFailure pure $ E.parseError loc msg
+parseError loc msg = customFailure $ E.ParseError loc msg
 
 validationError = E.validationError
 

@@ -25,6 +25,7 @@ library
     GraphQL.Resolution
     GraphQL.IO.Input
     GraphQL.IO.Output
+    GraphQL.AST
     GraphQL.AST.Parser
     GraphQL.AST.Lexer
     GraphQL.AST.Document
