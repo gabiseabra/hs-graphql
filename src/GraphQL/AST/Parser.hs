@@ -15,7 +15,19 @@ import qualified GraphQL.AST.Lexer as L
 import Control.Arrow ((+++))
 import Control.Comonad.Cofree (Cofree(..))
 import Control.Applicative ((<|>))
-import Text.Megaparsec (label, try, choice, optional, many, some, eitherP, eof, getSourcePos, customFailure)
+import Text.Megaparsec
+  ( label
+  , try
+  , choice
+  , optional
+  , option
+  , many
+  , some
+  , eitherP
+  , eof
+  , getSourcePos
+  , customFailure
+  )
 import Text.Megaparsec.Char (string, char)
 import Data.Bitraversable (bisequence)
 import Data.Maybe (isJust, fromMaybe)
@@ -26,7 +38,11 @@ import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
 
 parseOperationType :: Parser OperationType
-parseOperationType = label "OperationType" $ L.lexeme $ choice
+parseOperationType = label "OperationType"
+  $ L.lexeme
+  $ option Query
+  $ try
+  $ choice
   [ Query        <$ string "query"
   , Mutation     <$ string "mutation"
   , Subscription <$ string "subscription"
@@ -108,7 +124,7 @@ parseFragment = label "Fragment" $ L.lexeme $ do
 parseOperation :: Parser Operation'RAW
 parseOperation = label "Operation" $ L.lexeme $
   ( (,,,) <$> parseOperationType
-          <*> try (optional L.name)
+          <*> optional L.name
           <*> try (L.optional_ parseVars)
           <*> parseSelectionSet Nothing
   ) <@> extend5
@@ -117,7 +133,7 @@ parseRootNodes :: Parser RootNodes'RAW
 parseRootNodes = label "Document" $ L.sc *> nodes <* L.sc <* eof
   where
     nodes = validateRootNodesP =<< L.foldE p mempty
-    p ab  = appendEither ab <$> eitherP parseOperation parseFragment
+    p ab  = appendEither ab <$> eitherP parseFragment parseOperation
 
 extend5 e (a,b,c,d) = (a,b,c,d,e)
 

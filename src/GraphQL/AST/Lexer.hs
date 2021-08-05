@@ -174,7 +174,7 @@ argsE'
 argsE' p pK pV f = p $ manyE $ \kv -> do
   (pos, k) <- withPos $ pK <* symbol ":"
   if List.any ((== k) . fst) kv
-    then customFailure $ ParseError [pos] $ "Duplicated argument " <> k
+    then customFailure $ ValidationError [pos] $ "Duplicated argument " <> k
     else (,) <$> pure k <*> (f k =<< pV)
 
 argsE

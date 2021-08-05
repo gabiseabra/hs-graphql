@@ -162,7 +162,7 @@ type Operation'RAW
     , Pos
     )
 
-type RootNodes'RAW = (Operation'RAW, HashMap Name Fragment'RAW)
+type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
 
 -- | Validated AST nodes
 

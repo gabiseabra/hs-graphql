@@ -41,8 +41,8 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-document :: Input -> FilePath -> Text -> V Document
-document input path = validateDocument input <=< first err . parse parseRootNodes path
+document :: FilePath -> Maybe Name -> Input -> Text -> V Document
+document path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError
 err e = ne $ foldMap (formatParseError . second mkPos) errorsWithPos
