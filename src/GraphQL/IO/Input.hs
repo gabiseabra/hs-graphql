@@ -32,31 +32,6 @@ import qualified Data.Text as Text
 
 type Input = JSON.Object
 
-data VariableAssignment
-  = Var Text
-  | StrVal Text
-  | IntVal Int
-  | NumVal Double
-  | BoolVal Bool
-  | EnumVal Text
-  | ListVal [VariableAssignment]
-  | ObjectVal [(Text, VariableAssignment)]
-  deriving (Eq, Show)
-
-type Variables = [(Text, VariableAssignment)]
-
-resolveVariables :: Variables -> Input -> Input
-resolveVariables vars input = Map.fromList (map (fmap enc) vars)
-  where
-    enc (StrVal v) = JSON.toJSON v
-    enc (IntVal v) = JSON.toJSON v
-    enc (NumVal v) = JSON.toJSON v
-    enc (BoolVal v) = JSON.toJSON v
-    enc (EnumVal v) = JSON.toJSON v
-    enc (ListVal v) = JSON.toJSON (map enc v)
-    enc (ObjectVal v) = JSON.Object (Map.fromList (map (fmap enc) v))
-    enc (Var v) = fromMaybe JSON.Null (Map.lookup v input)
-
 -- | A GraphQL type that is allowed in inputs
 class
   ( GraphQLKind t

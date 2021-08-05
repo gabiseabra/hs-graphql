@@ -12,10 +12,16 @@ module GraphQL.AST.Lexer
   , sc
   , lexeme
   , symbol
+  , foldE
+  , manyE
+  , optional_
+  , withLocation
+  , (<@>)
   , braces
   , parens
   , brackets
-  , vars
+  , args
+  , argsE
   , name
   , varName
   , directiveName
@@ -27,10 +33,35 @@ module GraphQL.AST.Lexer
   )
   where
 
+import GraphQL.Error (GraphQLError(..))
+import GraphQL.AST.Document (Location(..))
+
 import Control.Applicative ((<|>), empty)
 import Control.Monad (void)
 import Data.Void (Void)
-import Text.Megaparsec (Parsec, label, try, choice, optional, between, many, manyTill, some, oneOf, satisfy, takeP, chunkToTokens, notFollowedBy)
+
+import Text.Megaparsec
+  ( MonadParsec(..)
+  , Parsec
+  , ParseError(..)
+  , label
+  , try
+  , choice
+  , optional
+  , between
+  , many
+  , manyTill
+  , manyTill_
+  , some
+  , oneOf
+  , satisfy
+  , takeP
+  , chunkToTokens
+  , tokensToChunk
+  , notFollowedBy
+  , getSourcePos
+  , customFailure
+  )
 import Text.Megaparsec.Char (string, char)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Char (chr, digitToInt)
@@ -40,9 +71,11 @@ import Data.Maybe (isJust, fromMaybe)
 import qualified Data.List as List
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
 import Data.Proxy (Proxy(..))
 
-type Parser = Parsec Text Text
+type Parser = Parsec GraphQLError Text
 
 upper, lower, alpha, ws, num :: String
 upper = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -97,16 +130,68 @@ lexeme = L.lexeme sc
 symbol :: Text -> Parser Text
 symbol = L.symbol sc
 
+optional_ :: Monoid m => Parser m -> Parser m
+optional_ = fmap (fromMaybe mempty) . optional
+
 between_ :: Parser sep -> Parser a -> Parser a
 between_ a = between a a
+
+withLocation' :: (Location -> a -> b) -> Parser a -> Parser b
+withLocation' f p = do
+  p0 <- getSourcePos
+  a  <- p
+  p1 <- getSourcePos
+  pure $ f (Span p0 p1) a
+
+withLocation :: Parser a -> Parser (Location, a)
+withLocation = withLocation' (,)
+
+(<@>) :: Parser a -> (Location -> a -> b) -> Parser b
+(<@>) = flip withLocation'
+
+foldWithRecovery :: MonadParsec e s m => (a -> ParseError s e -> m a) -> (a -> m a) -> a -> m a
+foldWithRecovery r f = let go a = withRecovery (r a) (go =<< f a) in go
+
+foldE :: MonadParsec e s m => (a -> m a) -> a -> m a
+foldE = foldWithRecovery recoverFromTrivialError
+
+manyE :: MonadParsec e s m => ([a] -> m a) -> m [a]
+manyE f = foldE (\as -> (:as) <$> f as) []
+
+recoverFromTrivialError a (TrivialError _ _ _) = pure a
+recoverFromTrivialError _ e = parseError e
 
 braces, parens, brackets :: Parser a -> Parser a
 braces = between (symbol "{") (symbol "}")
 parens = between (symbol "(") (symbol ")")
 brackets = between (symbol "[") (symbol "]")
 
-vars :: (forall a. Parser a -> Parser a) -> Parser k -> Parser v -> Parser [(k, v)]
-vars f k v = label "Variables" $ f $ many $ (,) <$> (k <* symbol ":") <*> v
+argsE'
+  :: (forall a. Parser a -> Parser a)
+  -> Parser Text
+  -> Parser a
+  -> (Text -> a -> Parser b)
+  -> Parser [(Text, b)]
+argsE' p pK pV f = p $ manyE $ \kv -> do
+  (loc, k) <- withLocation $ pK <* symbol ":"
+  if List.any ((== k) . fst) kv
+    then customFailure $ ParseError [loc] $ "Duplicated argument " <> k
+    else (,) <$> pure k <*> (f k =<< pV)
+
+argsE
+  :: (forall a. Parser a -> Parser a)
+  -> Parser Text
+  -> Parser a
+  -> (Text -> a -> Parser b)
+  -> Parser (HashMap Text b)
+argsE p pK pV f = Map.fromList <$> argsE' p pK pV f
+
+args
+  :: (forall a. Parser a -> Parser a)
+  -> Parser Text
+  -> Parser a
+  -> Parser (HashMap Text a)
+args p pK pV = argsE p pK pV (const pure)
 
 -- https://spec.graphql.org/June2018/#sec-Names
 name :: Parser Text
@@ -159,7 +244,7 @@ except = foldr List.delete
 
 -- http://spec.graphql.org/June2018/#EscapedUnicode
 -- http://spec.graphql.org/June2018/#EscapedCharacter
--- https://github.com/bens/caraus-graphql/blob/cbccb9ed0b32167dbb4de16eb5143dd62f9f3159/src/Language/GraphQL/AST/Lexer.hs#L204
+-- https://www.caraus.tech/projects/pub-graphql/repository/23/revisions/master/entry/src/Language/GraphQL/AST/Lexer.hs#L204
 escapeSequence :: Parser Char
 escapeSequence = do
     void $ char '\\'
@@ -184,8 +269,9 @@ symbol' :: Text -> Parser Text
 symbol' = L.symbol sc'
 
 lineString :: Parser Text
-lineString = label "InlineString" $ lexeme $ Text.pack <$> between_ (symbol' "\"") (many chars)
+lineString = label "InlineString" $ lexeme $ Text.pack <$> between_ delim (many chars)
   where
+    delim = symbol' "\""
     chars = choice
       [ escapeSequence
       , satisfy (`elem` (sourceChar `except` "\n"))
