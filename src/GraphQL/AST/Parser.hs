@@ -25,7 +25,6 @@ import Text.Megaparsec
   , some
   , eitherP
   , eof
-  , getSourcePos
   , customFailure
   )
 import Text.Megaparsec.Char (string, char)
@@ -38,14 +37,10 @@ import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
 
 parseOperationType :: Parser OperationType
-parseOperationType = label "OperationType"
-  $ L.lexeme
-  $ option Query
-  $ try
-  $ choice
-  [ Query        <$ string "query"
-  , Mutation     <$ string "mutation"
-  , Subscription <$ string "subscription"
+parseOperationType = label "OperationType" $ option Query $ try $ choice
+  [ Query        <$ L.symbol "query"
+  , Mutation     <$ L.symbol "mutation"
+  , Subscription <$ L.symbol "subscription"
   ]
 
 parseTypeDef :: Parser TypeDefinition
@@ -58,6 +53,9 @@ parseTypeDef = label "VariableDefinition" $ L.lexeme $ do
   if required
     then pure $ NonNullType var
     else pure var
+
+parseDefValue :: Parser (Maybe Value'RAW)
+parseDefValue = optional (L.symbol "=" *> parseVal)
 
 parseVal :: Parser Value'RAW
 parseVal = label "Value" $ choice
@@ -73,69 +71,72 @@ parseVal = label "Value" $ choice
   ] <@> (:<)
 
 parseVars :: Parser (HashMap Name Variable'RAW)
-parseVars = label "Variables" $ L.lexeme $ L.argsE L.parens L.varName pV validateVarP
-  where
-    pV = do
-      (pos, ty) <- L.withPos $ parseTypeDef
-      def <- optional (L.symbol "=" *> parseVal)
-      pure (ty, def, pos)
+parseVars = label "Variables" $ L.argsE validateVarP L.parens L.varName $
+  Variable'RAW <$> L.getPos
+               <*> parseTypeDef
+               <*> parseDefValue
 
 parseInput :: Parser (HashMap Name Value'RAW)
-parseInput = label "Input" $ L.lexeme $ L.args L.parens L.name parseVal
+parseInput = label "Input" $ L.args L.parens L.name parseVal
 
 parseAlias :: Parser (Maybe Name)
-parseAlias = optional (try (L.name <* L.symbol ":"))
+parseAlias = optional $ try (L.name <* L.symbol ":")
 
-parseField :: Maybe Typename -> Parser (Pos, Field'RAW)
-parseField ty = label "Field" $ L.lexeme $ do
-  (pos, (alias, name)) <- L.withPos $ (,) <$> parseAlias <*> L.name
-  input <- L.optional_ parseInput
-  pure (pos, (ty, alias, name, input))
+parseField :: Maybe Typename -> Parser Field'RAW
+parseField ty = label "Field" $
+  Field'RAW ty <$> parseAlias
+               <*> L.name
+               <*> L.optional_ parseInput
 
 parseSelectionNode :: Maybe Typename -> Parser SelectionNode'RAW
-parseSelectionNode ty = label "SelectionNode" $ L.lexeme $ choice
-    [ inlineFragment
+parseSelectionNode ty = label "SelectionNode" $ choice
+    [ try inlineFragment
     , fragmentSpread
     , node
     ]
   where
     node = do
-      (pos, field) <- parseField ty
-      selection    <- L.optional_ $ parseSelectionSet Nothing
-      pure (pos :< Node field selection)
+      pos   <- L.getPos
+      field <- parseField ty
+      sel   <- L.optional_ $ parseSelectionSet Nothing
+      pure (pos :< Node field sel)
     inlineFragment = do
-      (pos, ty) <- try $ L.symbol "..." *> L.symbol "on" *> L.withPos L.name
-      selection <- parseSelectionSet $ Just ty
-      pure (pos :< InlineFragment ty selection)
+      () <$ L.symbol "..." <* L.symbol "on"
+      pos <- L.getPos
+      ty  <- L.name
+      sel <- parseSelectionSet $ Just ty
+      pure (pos :< InlineFragment ty sel)
     fragmentSpread = do
-      (pos, name) <- L.symbol "..." *> L.withPos L.name
+      () <$ L.symbol "..."
+      pos  <- L.getPos
+      name <- L.name
       pure (pos :< FragmentSpread name)
 
 parseSelectionSet :: Maybe Typename -> Parser [SelectionNode'RAW]
-parseSelectionSet ty = label "SelectionSet" $ L.lexeme $ L.braces $ some $ parseSelectionNode ty
+parseSelectionSet ty = label "SelectionSet" $ L.braces $ some $ parseSelectionNode ty
 
 parseFragment :: Parser (Text, Fragment'RAW)
-parseFragment = label "Fragment" $ L.lexeme $ do
-  (pos, name) <- L.symbol "fragment" *> L.withPos L.name
-  ty          <- L.symbol "on" *> L.name
-  selection   <- parseSelectionSet $ Just ty
-  pure (name, (ty, selection, pos))
+parseFragment = label "Fragment" $ do
+  () <$ L.symbol "fragment"
+  pos  <- L.getPos
+  name <- L.name
+  ty   <- L.symbol "on" *> L.name
+  sel  <- parseSelectionSet $ Just ty
+  pure $ (name, Fragment'RAW pos ty sel)
 
 parseOperation :: Parser Operation'RAW
-parseOperation = label "Operation" $ L.lexeme $
-  ( (,,,) <$> parseOperationType
-          <*> optional L.name
-          <*> try (L.optional_ parseVars)
-          <*> parseSelectionSet Nothing
-  ) <@> extend5
+parseOperation = label "Operation" $
+  Operation'RAW <$> L.getPos
+                <*> parseOperationType
+                <*> optional L.name
+                <*> try (L.optional_ parseVars)
+                <*> parseSelectionSet Nothing
 
 parseRootNodes :: Parser RootNodes'RAW
 parseRootNodes = label "Document" $ L.sc *> nodes <* L.sc <* eof
   where
     nodes = validateRootNodesP =<< L.foldE p mempty
     p ab  = appendEither ab <$> eitherP parseFragment parseOperation
-
-extend5 e (a,b,c,d) = (a,b,c,d,e)
 
 appendEither :: ([a], [b]) -> Either a b -> ([a], [b])
 appendEither (as, bs) (Right b) = (as, b:bs)

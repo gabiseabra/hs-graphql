@@ -15,6 +15,7 @@ module GraphQL.AST.Lexer
   , foldE
   , manyE
   , optional_
+  , getPos
   , withPos
   , (<@>)
   , braces
@@ -136,17 +137,14 @@ optional_ = fmap (fromMaybe mempty) . optional
 between_ :: Parser sep -> Parser a -> Parser a
 between_ a = between a a
 
-withPos' :: (Pos -> a -> b) -> Parser a -> Parser b
-withPos' f p = do
-  pos <- mkPos <$> getSourcePos
-  a   <- p
-  pure $ f pos a
+getPos :: Parser Pos
+getPos = mkPos <$> getSourcePos
 
-withPos :: Parser a -> Parser (Pos, a)
-withPos = withPos' (,)
+withPos :: (Pos -> a -> b) -> Parser a -> Parser b
+withPos f p = f <$> getPos <*> p
 
 (<@>) :: Parser a -> (Pos -> a -> b) -> Parser b
-(<@>) = flip withPos'
+(<@>) = flip withPos
 
 foldWithRecovery :: MonadParsec e s m => (a -> ParseError s e -> m a) -> (a -> m a) -> a -> m a
 foldWithRecovery r f = let go a = withRecovery (r a) (go =<< f a) in go
@@ -166,31 +164,32 @@ parens = between (symbol "(") (symbol ")")
 brackets = between (symbol "[") (symbol "]")
 
 argsE'
-  :: (forall a. Parser a -> Parser a)
+  :: (Text -> a -> Parser b)
+  -> (forall a. Parser a -> Parser a)
   -> Parser Text
   -> Parser a
-  -> (Text -> a -> Parser b)
   -> Parser [(Text, b)]
-argsE' p pK pV f = p $ manyE $ \kv -> do
-  (pos, k) <- withPos $ pK <* symbol ":"
+argsE' f p pK pV = p $ manyE $ \kv -> do
+  pos <- getPos
+  k   <- pK <* symbol ":"
   if List.any ((== k) . fst) kv
     then customFailure $ ValidationError [pos] $ "Duplicated argument " <> k
     else (,) <$> pure k <*> (f k =<< pV)
 
 argsE
-  :: (forall a. Parser a -> Parser a)
+  :: (Text -> a -> Parser b)
+  -> (forall a. Parser a -> Parser a)
   -> Parser Text
   -> Parser a
-  -> (Text -> a -> Parser b)
   -> Parser (HashMap Text b)
-argsE p pK pV f = Map.fromList <$> argsE' p pK pV f
+argsE f p pK pV = Map.fromList <$> argsE' f p pK pV
 
 args
   :: (forall a. Parser a -> Parser a)
   -> Parser Text
   -> Parser a
   -> Parser (HashMap Text a)
-args p pK pV = argsE p pK pV (const pure)
+args = argsE (const pure)
 
 -- https://spec.graphql.org/June2018/#sec-Names
 name :: Parser Text

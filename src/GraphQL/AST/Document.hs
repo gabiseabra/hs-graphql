@@ -1,10 +1,8 @@
 {-# LANGUAGE
-    DuplicateRecordFields
-  , TypeFamilies
+    TypeFamilies
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
-  , TemplateHaskell
 #-}
 
 module GraphQL.AST.Document
@@ -18,11 +16,11 @@ module GraphQL.AST.Document
   , TypeDefinition(..)
   , SelectionNodeF(..)
   , Value'RAW
-  , Variable'RAW
-  , Field'RAW
+  , Variable'RAW(..)
+  , Field'RAW(..)
   , SelectionNode'RAW
-  , Fragment'RAW
-  , Operation'RAW
+  , Fragment'RAW(..)
+  , Operation'RAW(..)
   , RootNodes'RAW
   , Field(..)
   , Document(..)
@@ -133,34 +131,38 @@ instance Show1 SelectionNodeF where
 
 type Value'RAW = Cofree (ValueF Name) Pos
 
-type Variable'RAW
-  = ( TypeDefinition
-    , Maybe Value'RAW
-    , Pos
-    )
+data Variable'RAW
+  = Variable'RAW
+    { _varPos :: Pos
+    , _varTypeDef :: TypeDefinition
+    , _varDefValue :: Maybe Value'RAW
+    } deriving (Eq, Show)
 
-type Field'RAW
-  = ( Maybe Typename         -- typename constraint
-    , Maybe Name             -- alias
-    , Name                   -- field name
-    , HashMap Name Value'RAW -- input values
-    )
+data Field'RAW
+  = Field'RAW
+    { _fieldType :: Maybe Typename
+    , _fieldAlias :: Maybe Name
+    , _fieldName :: Name
+    , _fieldInput :: HashMap Name Value'RAW
+    } deriving (Eq, Show)
 
 type SelectionNode'RAW = Cofree SelectionNodeF Pos
 
-type Fragment'RAW
-  = ( Typename
-    , [SelectionNode'RAW]
-    , Pos
-    )
+data Fragment'RAW
+  = Fragment'RAW
+    { _fragPos ::Pos
+    , _fragTypename :: Typename
+    , _fragSelection :: [SelectionNode'RAW]
+    } deriving (Eq, Show)
 
-type Operation'RAW
-  = ( OperationType
-    , Maybe Name
-    , HashMap Name Variable'RAW
-    , [SelectionNode'RAW]
-    , Pos
-    )
+data Operation'RAW
+  = Operation'RAW
+    { _opPos :: Pos
+    , _opType :: OperationType
+    , _opName :: Maybe Name
+    , _opVariables :: HashMap Name Variable'RAW
+    , _opSelection :: [SelectionNode'RAW]
+    } deriving (Eq, Show)
 
 type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
 
@@ -168,17 +170,17 @@ type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
 
 data Field
   = Field
-    { typename :: Maybe Typename
-    , alias :: Maybe Name
-    , name :: Name
-    , input :: HashMap Name Value
+    { fieldType :: Maybe Typename
+    , fieldAlias :: Maybe Name
+    , fieldName :: Name
+    , fieldInput :: HashMap Name Value
     } deriving (Eq, Show)
 
 data Document
   = Document
-    { operation :: OperationType
-    , name :: Maybe Name
-    , selection :: [Selection]
+    { opType :: OperationType
+    , opName :: Maybe Name
+    , opSelection :: [Selection]
     } deriving (Eq, Show)
 
 type Value = Cofree (ValueF JSON.Value) (Pos, Maybe TypeDefinition)
