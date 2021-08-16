@@ -10,11 +10,17 @@
   , DefaultSignatures
   , TypeOperators
   , OverloadedStrings
+  , RankNTypes
 #-}
 
-module GraphQL.IO.Input where
+module GraphQL.IO.Input
+  ( Input
+  , readInputType
+  , readInputFields
+  , readInput
+  ) where
 
-import GraphQL.Class
+import GraphQL.TypeSystem
 import GraphQL.Internal
 
 import Control.Monad ((<=<))
@@ -23,6 +29,7 @@ import qualified Data.Aeson.Types as JSON
 import Data.Aeson.Types ((<?>))
 import qualified Data.HashMap.Strict as Map
 import qualified Data.List as List
+import Data.Vector (Vector)
 import Data.Maybe (fromMaybe)
 import Data.Row.Records (Rec, Row)
 import qualified Data.Row.Records as Rec
@@ -32,56 +39,56 @@ import qualified Data.Text as Text
 
 type Input = JSON.Object
 
--- | A GraphQL type that is allowed in inputs
-class
-  ( GraphQLKind t
-  , (KIND t) !>> IN
-  ) => GraphQLInputKind (t :: * -> *) where
-  readInputType :: t a -> JSON.Value -> V a
+showType :: JSON.Value -> Text
+showType JSON.Null       = "Null"
+showType (JSON.String _) = "String"
+showType (JSON.Number _) = "Number"
+showType (JSON.Bool   _) = "Boolean"
+showType (JSON.Array  _) = "Array"
+showType (JSON.Object _) = "Object"
 
-class GraphQLInput a where
-  inputFields :: InputFields a
-  default inputFields
-    :: Rec.ToNative a
-    => Row.AllUniqueLabels (Rec.NativeRow a)
-    => Rec.Forall (Rec.NativeRow a) GraphQLInputType
-    => InputFields a
-  inputFields = InputFields Rec.toNative
+readScalarType :: forall a. ScalarDef a -> Text -> JSON.Value -> V a
+readScalarType (ScalarDef _ dec) lbl val = maybe err pure $ dec val
+  where err = Left $ "Failed to read " <> lbl <> ". Unexpected " <> showType val
 
-data InputFields a where
-  InputFields ::
-    ( Row.Forall r GraphQLInputType
-    , Row.AllUniqueLabels r
-    ) => (Rec r -> a)
-      -> InputFields a
+readEnumType :: forall a. EnumDef a -> Text -> JSON.Value -> V a
+readEnumType (EnumDef _ _ dec) lbl (JSON.String val) = maybe err pure $ dec val
+  where err = Left $ "Failed to read " <> lbl <> ". " <> (Text.pack $ show val) <> " is not a valid enum value"
+readEnumType _   lbl val = Left $ "Failed to read " <> lbl <> ". Expected a String value but got " <> showType val
 
-instance GraphQLInput () where inputFields = InputFields (\(_ :: Rec Row.Empty) -> ())
+readListType :: forall f. ListDef f -> Text -> JSON.Value -> V (f JSON.Value)
+readListType (ListDef _ dec) lbl (JSON.Array val) = maybe err pure $ dec val
+  where err = Left $ "Failed to read " <> lbl
+readListType _   lbl val = Left $ "Failed to read " <> lbl <> ". Expected an Array value but got " <> showType val
 
-class
-  ( GraphQLType a
-  , GraphQLInputKind (KindOf a)
-  ) => GraphQLInputType a where
-  readInputType' :: JSON.Value -> V a
-instance
-  ( GraphQLType a
-  , GraphQLInputKind (KindOf a)
-  ) => GraphQLInputType a where
-  readInputType' = readInputType typeOf_
+readNullableType :: forall f. NullableDef f -> JSON.Value -> V (f JSON.Value)
+readNullableType (NullableDef _ dec) JSON.Null = pure (dec Nothing)
+readNullableType (NullableDef _ dec) val       = pure (dec $ Just val)
+
+readInputType :: TypeDef k a -> JSON.Value -> V a
+readInputType (ScalarType      ty _ def                   ) = readScalarType def ty
+readInputType (EnumType        ty _ def                   ) = readEnumType def ty
+readInputType (ListType        ty a def@(ListDef      _ _)) = traverse (readInputType a) <=< readListType def ty
+readInputType (NullableType    _  a def@(NullableDef  _ _)) = traverse (readInputType a) <=< readNullableType def
+readInputType (InputObjectType ty _     (InputObjectDef f)) = fmap f . readInputFields ty
 
 readInputFields :: forall r
   .  Row.AllUniqueLabels r
   => Row.Forall r GraphQLInputType
-  => JSON.Value
+  => Text
+  -> JSON.Value
   -> V (Rec r)
-readInputFields (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
+readInputFields _ (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
   where
     readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> V a
     readField lbl =
       let
         key = Text.pack (show lbl)
         val = fromMaybe JSON.Null $ Map.lookup key obj
-      in readInputType' val
-readInputFields actual = Left "expected an object"
+      in readInputType (typeDef @a) val
+readInputFields lbl val = Left $ "Failed to read " <> lbl <> ". Expected an Object value but got " <> showType val
 
-readInput :: forall a. GraphQLInput a => Input -> V a
-readInput = case inputFields @a of InputFields f -> pure . f <=< readInputFields . JSON.Object
+readInput :: forall a. GraphQLInput a => Text -> Input -> V a
+readInput lbl = case inputDef @a of
+  EmptyFields a                  -> const $ pure a
+  InputFields (InputObjectDef f) -> pure . f <=< readInputFields lbl . JSON.Object

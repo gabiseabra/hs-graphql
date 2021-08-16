@@ -9,9 +9,9 @@
 
 module Test.Utils where
 
+import GraphQL.TypeSystem
 import GraphQL.Selection
 import GraphQL.Internal
-import GraphQL.Resolution
 import GraphQL.IO.Input
 import GraphQL.IO.Output
 
@@ -21,8 +21,6 @@ import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF(..))
 import Data.Text (Text)
 import qualified Data.Text as Text
-
-type STree = Fix (TreeF Selection)
 
 (&:) :: Selection -> [STree] -> STree
 (&:) s r = Fix (NodeF s r)

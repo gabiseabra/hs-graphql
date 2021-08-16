@@ -1,5 +1,7 @@
 {-# LANGUAGE
     TypeFamilies
+  , DataKinds
+  , PolyKinds
   , DeriveGeneric
   , OverloadedStrings
   , NamedFieldPuns
@@ -14,28 +16,27 @@ import Test.Utils
 
 import GHC.Generics (Generic)
 
-import GraphQL.Class (GraphQLType(..))
-import GraphQL.Kinds
+import GraphQL.TypeSystem
 import GraphQL.Types
-import GraphQL.IO.Input
 
 import Control.Monad ((<=<))
 import Data.Aeson ((.=), object)
 import Data.Maybe (fromMaybe)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
+import Data.Typeable (Typeable)
 
 data AnInputObject
   = AnInputObject
     { io_0 :: String
     , io_1 :: Maybe String
-    } deriving (Generic)
+    } deriving (Generic, Typeable)
 
 instance Show AnInputObject where show (AnInputObject { io_0, io_1 }) = fromMaybe io_0 io_1
 
 instance GraphQLType AnInputObject where
-  type KindOf AnInputObject = INPUT_OBJECT
-  typename _ = "AnInputObject"
+  type KIND AnInputObject = INPUT_OBJECT
+  typeDef = inputObjectDef "AnInputObject"
 
 -- | Completely optional input
 data Input0
@@ -56,11 +57,11 @@ data A m
     , a1 :: ()     -> m (Maybe String)
     , a2 :: Input0 -> m Int
     , a3 :: Input1 -> m (A m)
-    } deriving (Generic)
+    } deriving (Generic, Typeable)
 
-instance Applicative m => GraphQLType (A m) where
-  type KindOf (A m) = OBJECT m
-  typename _ = "A"
+instance (Typeable m, Applicative m) => GraphQLType (A m) where
+  type KIND (A m) = OBJECT @m
+  typeDef = resolverDef "A"
 
 a :: Input1 -> (A IO)
 a (Input1 { i1_0, i1_1 })
@@ -73,8 +74,13 @@ a (Input1 { i1_0, i1_1 })
 a' = a (Input1 { i1_0 = 420, i1_1 = Nothing })
 
 spec :: Spec
-spec = describe "Examples.InputSpec" $ do
-  it "parses valid input" $ do
+spec = do
+  inputObjectSpec
+  validationSpec
+
+inputObjectSpec :: Spec
+inputObjectSpec = describe "inputObjectDef" $ do
+  it "parses" $ do
     let
       i = object
           [ "i1_0" .= (69 :: Int)
@@ -98,11 +104,14 @@ spec = describe "Examples.InputSpec" $ do
             ]
           ]
     exec s a' `shouldReturn` o
+
+validationSpec :: Spec
+validationSpec = describe "inputObjectDef" $ do
   it "fails with invalid input values" $ do
     let
       i = object [ "i1_0" .= ("lmao" :: String) ]
       s = [ sel "a3" i &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered String"
+    eval @(A IO) s `shouldBe` Left "Failed to read Int. Unexpected String"
   it "fails with missing input fields" $ do
     let s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "parsing Int failed, expected Number, but encountered Null"
+    eval @(A IO) s `shouldBe` Left "Failed to read Int. Unexpected Null"

@@ -1,5 +1,7 @@
 {-# LANGUAGE
     TypeFamilies
+  , DataKinds
+  , PolyKinds
   , DeriveGeneric
   , OverloadedStrings
   , TypeApplications
@@ -12,42 +14,47 @@ import Test.Utils
 
 import GHC.Generics (Generic)
 
-import GraphQL.Class (GraphQLType(..))
-import GraphQL.Kinds
+import GraphQL.TypeSystem
 import GraphQL.Types
 
 import Control.Monad ((<=<))
 import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
+import Data.Typeable (Typeable)
 
 data A m = A { a0 :: () -> m Int } deriving (Generic)
 
-instance Applicative m => GraphQLType (A m) where
-  type KindOf (A m) = OBJECT m
-  typename _ = "A"
+instance (Typeable m, Applicative m) => GraphQLType (A m) where
+  type KIND (A m) = OBJECT @m
+  typeDef = resolverDef "A"
 
-data B m = B { b0 :: () -> m Int } deriving (Generic)
+data B m = B { b0 :: () -> m Int } deriving (Generic, Typeable)
 
-instance Applicative m => GraphQLType (B m) where
-  type KindOf (B m) = OBJECT m
-  typename _ = "B"
+instance (Typeable m, Applicative m) => GraphQLType (B m) where
+  type KIND (B m) = OBJECT @m
+  typeDef = resolverDef "B"
 
 data AB m
   = AB_A (A m)
   | AB_B (B m)
-  deriving (Generic)
+  deriving (Generic, Typeable)
 
-instance Applicative m => GraphQLType (AB m) where
-  type KindOf (AB m) = UNION m
-  typename _ = "AB"
+instance (Typeable m, Applicative m) => GraphQLType (AB m) where
+  type KIND (AB m) = UNION @m
+  typeDef = unionDef "AB"
 
 ab :: AB IO
 ab = AB_A $ A { a0 = \_ -> pure 420 }
 
 spec :: Spec
-spec = describe "Examples.UnionSpec" $ do
-  it "resolves union types" $ do
+spec = do
+  unionSpec
+  validationSpec
+
+unionSpec :: Spec
+unionSpec = describe "unionDef" $ do
+  it "resolves" $ do
     let
       s = [ sel_ "__typename" &: []
           , sel_ "a0" `on` "A" &: []
@@ -58,14 +65,17 @@ spec = describe "Examples.UnionSpec" $ do
           , "a0" .= (420 :: Int)
           ]
     exec s ab `shouldReturn` o
+
+validationSpec :: Spec
+validationSpec = describe "validation" $ do
   it "fails with empty selection" $ do
-    eval @(AB IO) [] `shouldBe` Left "Invalid selection"
+    eval @(AB IO) [] `shouldBe` Left "Union type AB must have a selection"
   it "fails with invalid typename" $ do
     let s = [ sel_ "x" `on` "X" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Invalid typename X in union selection"
+    eval @(AB IO) s `shouldBe` Left "X is not a possible type of union type AB"
   it "fails with unspecified typename" $ do
     let s = [ sel_ "a0" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "No typename provided for union field"
+    eval @(AB IO) s `shouldBe` Left "Invalid selection with unspecified typename on union type AB"
   it "fails with invalid selection on possible type" $ do
     let s = [ sel_ "a1" `on` "A" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Field a1 doesn't exist on type A"
+    eval @(AB IO) s `shouldBe` Left "Field a1 does not exist in object of type A"

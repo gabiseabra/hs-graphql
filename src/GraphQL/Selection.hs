@@ -4,10 +4,10 @@ module GraphQL.Selection
   ( Selection(..)
   ) where
 
-import GraphQL.Class
+import GraphQL.TypeSystem (Typename)
 import GraphQL.IO.Input
 
-import Data.Functor.Base (TreeF(..))
+import qualified Data.Aeson as JSON
 import Data.Text (Text)
 
 data Selection
@@ -15,6 +15,6 @@ data Selection
     { name :: Text
     , alias :: Maybe Text
     -- , variables :: Variables
-    , input :: Input
+    , input :: JSON.Object
     , typeConstraint :: Maybe Typename
     } deriving (Show)

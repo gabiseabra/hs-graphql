@@ -16,13 +16,13 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    GraphQL.Class
     GraphQL.Error
     GraphQL.Internal
-    GraphQL.Kinds
     GraphQL.Types
     GraphQL.Selection
-    GraphQL.Resolution
+    GraphQL.TypeSystem
+    GraphQL.TypeSystem.Introspection
+    GraphQL.TypeSystem.TypeDefs
     GraphQL.IO.Input
     GraphQL.IO.Output
     GraphQL.AST
