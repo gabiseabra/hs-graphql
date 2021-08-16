@@ -2,13 +2,13 @@
     OverloadedStrings
   , TupleSections
   , RankNTypes
-  , ScopedTypeVariables
 #-}
 
 module GraphQL.AST.Validation
   ( validateVarP
   , validateRootNodesP
   , validateDocument
+  , collectFields
   ) where
 
 import GraphQL.AST.Document
@@ -16,13 +16,14 @@ import GraphQL.AST.Lexer (Parser)
 import GraphQL.Error (V)
 import qualified GraphQL.Error as E
 
-import Control.Comonad.Cofree (Cofree(..))
+import Control.Comonad.Cofree (Cofree(..), unfoldM)
 import Control.Monad.Trans (lift)
 import Control.Monad.State.Lazy (StateT(..))
 import qualified Control.Monad.State.Lazy as ST
 import qualified Data.Aeson as JSON
 import Data.Function (on)
 import Data.Bifunctor (first, second)
+import Data.Bitraversable (bitraverse)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.List as List
 import Data.List.NonEmpty (NonEmpty(..))
@@ -36,14 +37,13 @@ import qualified Data.Text as Text
 import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
 
-validateDocument :: Maybe Name -> Input -> RootNodes'RAW -> V Document
+validateDocument :: Maybe Name -> Input -> RootNodes'RAW -> V (HashMap Name Fragment, Document SelectionSet)
 validateDocument opName input (frags, ops) = do
   op <- getOperation opName ops
-  let
-    vars = _opVariables op
-    sel = _opSelection op
-    fn = validateField (Map.filter (/= JSON.Null) input) vars
-  Document (_opType op) (_opName op) <$> eraseSelectionWith fn frags sel
+  let fn = hoistM $ bitraverse (validateField (Map.filter (/= JSON.Null) input) (_opVariables op)) pure
+  sel' <- traverse fn $ _opSelection op
+  frags' <- traverse (traverse fn) frags
+  pure (frags', Document (_opType op) (_opName op) sel')
 
 getOperation :: Maybe Name -> NonEmpty Operation'RAW -> V Operation'RAW
 getOperation Nothing (op:|[]) = pure op
@@ -53,35 +53,28 @@ getOperation (Just opName) ops =
     Nothing -> E.validationError [] $ "Operation " <> opName <> " is not defined"
     Just op -> pure op
 
-validateField :: Input -> HashMap Name Variable'RAW -> Field'RAW -> V Field
-validateField input vars field = do
-  inputValues <- traverse (eraseVars input vars) (_fieldInput field)
-  pure $ Field (_fieldType field) (_fieldAlias field) (_fieldName field) inputValues
-
-eraseSelectionWith
-  :: (Field'RAW -> V a)
-  -> HashMap Name Fragment'RAW
-  -> [SelectionNode'RAW]
-  -> V [Cofree (TreeF a) Pos]
-eraseSelectionWith f frags s = do
-  (s', visited) <- runStateT (foldMapM (eraseFragmentsWith f frags) s) mempty
+collectFields
+  :: HashMap Name Fragment
+  -> Document SelectionSet
+  -> V (Document SelectionTree)
+collectFields frags doc = do
+  (sel, visited) <- runStateT (foldMapM (eraseFragments frags) $ opSelection doc) mempty
   let unused = Map.filterWithKey (\k _ -> Set.notMember k visited) frags
   if length visited == length frags
-    then pure s'
-    else E.validationError (fmap _fragPos $ Map.elems unused)
+    then pure $ doc { opSelection = sel }
+    else E.validationError (fmap fragPos $ Map.elems unused)
           $ "Document has unused fragments: "
           <> Text.intercalate ", " (Map.keys unused)
 
-eraseFragmentsWith
-  :: (Field'RAW -> V a)
-  -> HashMap Name Fragment'RAW
-  -> SelectionNode'RAW
+eraseFragments
+  :: HashMap Name (FragmentF (SelectionNode a))
+  -> SelectionNode a
   -> StateT (Set Name) V [Cofree (TreeF a) Pos]
-eraseFragmentsWith f frags (pos :< Node a as) =
-  pure . (pos :<) <$> (NodeF <$> lift (f a) <*> foldMapM (eraseFragmentsWith f frags) as)
-eraseFragmentsWith f frags (_ :< InlineFragment _ as) =
-  foldMapM (eraseFragmentsWith f frags) as
-eraseFragmentsWith f frags (pos :< FragmentSpread k) = do
+eraseFragments frags (pos :< Node a as) =
+  pure . (pos :<) . NodeF a <$> foldMapM (eraseFragments frags) as
+eraseFragments frags (_ :< InlineFragment _ as) =
+  foldMapM (eraseFragments frags) as
+eraseFragments frags (pos :< FragmentSpread k) = do
   visited <- ST.get
   if Set.member k visited
     then lift $ E.validationError [pos] $ "Cycle in fragment " <> k
@@ -89,7 +82,12 @@ eraseFragmentsWith f frags (pos :< FragmentSpread k) = do
       Nothing   -> lift $ E.validationError [pos] $ "Fragment " <> k <> " is not defined"
       Just frag -> do
         ST.put (Set.insert k visited)
-        foldMapM (eraseFragmentsWith f frags) $ _fragSelection frag
+        foldMapM (eraseFragments frags) $ fragSelection frag
+
+validateField :: Input -> HashMap Name Variable'RAW -> Field'RAW -> V Field
+validateField input vars field = do
+  args <- traverse (eraseVars input vars) (fieldArgs field)
+  pure $ Field (fieldType field) (fieldAlias field) (fieldName field) args
 
 eraseVars :: Input -> HashMap Name Variable'RAW -> Value'RAW -> V Value
 eraseVars _ _    (pos :< NullVal)       = pure $ (pos, Nothing) :< NullVal
@@ -145,7 +143,7 @@ validateFragmentsP frags =
   where
     fragsMap = Map.fromList frags
     dupes = dupesWith ((==) `on` fst) frags
-    locs  = fmap (_fragPos . snd) dupes
+    locs  = fmap (fragPos . snd) dupes
     names = fmap fst dupes
 
 validateVarP :: Name -> Variable'RAW -> Parser Variable'RAW
@@ -178,3 +176,6 @@ dupesWith f (x:xs) = filter (f x) xs ++ dupesWith f xs
 
 att :: a -> Cofree f a -> Cofree f a
 att a (_:<f) = (a:<f)
+
+hoistM :: (Traversable f, Monad m) => (forall x . f x -> m (g x)) -> Cofree f a -> m (Cofree g a)
+hoistM f (x :< y) = (x:<) <$> (f =<< traverse (hoistM f) y)

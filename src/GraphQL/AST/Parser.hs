@@ -84,9 +84,9 @@ parseAlias = optional $ try (L.name <* L.symbol ":")
 
 parseField :: Maybe Typename -> Parser Field'RAW
 parseField ty = label "Field" $
-  Field'RAW ty <$> parseAlias
-               <*> L.name
-               <*> L.optional_ parseInput
+  Field ty <$> parseAlias
+           <*> L.name
+           <*> L.optional_ parseInput
 
 parseSelectionNode :: Maybe Typename -> Parser SelectionNode'RAW
 parseSelectionNode ty = label "SelectionNode" $ choice
@@ -122,7 +122,7 @@ parseFragment = label "Fragment" $ do
   name <- L.name
   ty   <- L.symbol "on" *> L.name
   sel  <- parseSelectionSet $ Just ty
-  pure $ (name, Fragment'RAW pos ty sel)
+  pure $ (name, Fragment pos ty sel)
 
 parseOperation :: Parser Operation'RAW
 parseOperation = label "Operation" $

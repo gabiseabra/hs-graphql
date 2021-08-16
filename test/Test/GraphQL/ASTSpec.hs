@@ -15,11 +15,14 @@ import GraphQL.AST
   , OperationType(..)
   , TypeDefinition(..)
   , ValueF(..)
-  , Field(..)
+  , FieldF(..)
   , Document(..)
-  , document
+  , SelectionTree
+  , parseDocument
+  , collectFields
   )
 
+import Control.Monad ((<=<))
 import Control.Comonad.Cofree (Cofree(..))
 import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
@@ -35,8 +38,8 @@ import Data.Functor.Identity (Identity(..))
 pos :: Int -> Int -> Pos
 pos line col = (Pos line col)
 
-parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V Document)
-parseTest' op (JSON.Object i) f = document f op i <$> Text.readFile f
+parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V (Document SelectionTree))
+parseTest' op (JSON.Object i) f = (uncurry collectFields <=< parseDocument f op i) <$> Text.readFile f
 parseTest = parseTest' Nothing
 parseTestNamed = parseTest' . Just
 

@@ -11,11 +11,16 @@ module GraphQL.AST
   , OperationType(..)
   , TypeDefinition(..)
   , ValueF(..)
-  , Field(..)
+  , FieldF(..)
+  , SelectionNodeF(..)
+  , FragmentF(..)
   , Document(..)
   , Value
-  , Selection
-  , document
+  , Fragment
+  , SelectionTree
+  , SelectionSet
+  , parseDocument
+  , collectFields
   ) where
 
 import GraphQL.AST.Document
@@ -28,6 +33,7 @@ import Data.Bifunctor (first, second)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Set as Set
+import Data.HashMap.Strict (HashMap)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
 import Text.Megaparsec (SourcePos, unPos, parse)
@@ -41,8 +47,8 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-document :: FilePath -> Maybe Name -> Input -> Text -> V Document
-document path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
+parseDocument :: FilePath -> Maybe Name -> Input -> Text -> V (HashMap Name Fragment, Document SelectionSet)
+parseDocument path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError
 err e = ne $ foldMap (formatParseError . second mkPos) errorsWithPos

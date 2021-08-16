@@ -15,21 +15,29 @@ module GraphQL.AST.Document
   , ValueF(..)
   , TypeDefinition(..)
   , SelectionNodeF(..)
+  , SelectionNode
+  , FieldF(..)
+  , FragmentF(..)
+  , Document(..)
   , Value'RAW
   , Variable'RAW(..)
-  , Field'RAW(..)
+  , Field'RAW
   , SelectionNode'RAW
-  , Fragment'RAW(..)
+  , Fragment'RAW
   , Operation'RAW(..)
   , RootNodes'RAW
-  , Field(..)
-  , Document(..)
   , Value
-  , Selection
+  , Field
+  , Fragment
+  , SelectionTree
+  , SelectionSet
   ) where
 
 import Control.Comonad.Cofree (Cofree)
 import qualified Data.Aeson as JSON
+import Data.Bifunctor (Bifunctor(..))
+import Data.Bifoldable (Bifoldable(..))
+import Data.Bitraversable (Bitraversable(..))
 import Data.List.NonEmpty (NonEmpty)
 import Data.Text (Text)
 import Data.Fix (Fix)
@@ -112,22 +120,101 @@ data TypeDefinition
   | NamedType Typename
   deriving (Eq, Show)
 
-data SelectionNodeF r
-  = Node Field'RAW [r]
+data FieldF a
+  = Field
+    { fieldType :: Maybe Typename
+    , fieldAlias :: Maybe Name
+    , fieldName :: Name
+    , fieldArgs :: HashMap Name a
+    } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Eq1 FieldF where
+  liftEq f (Field ty alias name args) (Field ty' alias' name' args')
+    =  ty == ty'
+    && alias == alias'
+    && name == name'
+    && liftEq f args args'
+
+instance Show1 FieldF where
+  liftShowsPrec sp sl d (Field ty alias name args)
+    = showsUnaryWith
+      (liftShowsPrec sp sl)
+      ("Field " <> show ty <> " " <> show alias <> " " <> show name)
+      d args
+
+data SelectionNodeF a r
+  = Node a [r]
   | FragmentSpread Name
   | InlineFragment Typename [r]
-  deriving (Functor, Foldable, Traversable)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Eq1 SelectionNodeF where
+type SelectionNode a = Cofree (SelectionNodeF a) Pos
+
+instance Bifunctor SelectionNodeF where
+  bimap f g (Node a r)           = Node (f a) (fmap g r)
+  bimap f g (FragmentSpread a)   = FragmentSpread a
+  bimap f g (InlineFragment a r) = InlineFragment a (fmap g r)
+
+instance Bifoldable SelectionNodeF where
+  bifoldMap f g (Node a r)           = f a `mappend` (foldMap g r)
+  bifoldMap f g (FragmentSpread a)   = mempty
+  bifoldMap f g (InlineFragment a r) = foldMap g r
+
+instance Bitraversable SelectionNodeF where
+  bitraverse f g (Node a r)           = Node <$> f a <*> traverse g r
+  bitraverse f g (FragmentSpread a)   = pure $ FragmentSpread a
+  bitraverse f g (InlineFragment a r) = InlineFragment a <$> traverse g r
+
+instance Eq a => Eq1 (SelectionNodeF a) where
   liftEq f (Node a l)           (Node b r)           = a == b && liftEq f l r
   liftEq f (FragmentSpread a)   (FragmentSpread b)   = a == b
   liftEq f (InlineFragment a l) (InlineFragment b r) = a == b && liftEq f l r
   liftEq _ _ _                           = False
 
-instance Show1 SelectionNodeF where
+instance Show a => Show1 (SelectionNodeF a) where
   liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
   liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
+
+data FragmentF a
+  = Fragment
+    { fragPos ::Pos
+    , fragTypename :: Typename
+    , fragSelection :: [a]
+    } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Eq1 FragmentF where
+  liftEq f (Fragment pos ty as) (Fragment pos' ty' bs)
+    =  pos == pos'
+    && ty == ty'
+    && liftEq f as bs
+
+instance Show1 FragmentF where
+  liftShowsPrec sp sl d (Fragment pos ty as)
+    = showsUnaryWith
+      (liftShowsPrec sp sl)
+      ("Fragment " <> show pos <> " " <> show ty)
+      d as
+
+data Document a
+  = Document
+    { opType :: OperationType
+    , opName :: Maybe Name
+    , opSelection :: [a]
+    } deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Eq1 Document where
+  liftEq f (Document t name as) (Document t' name' bs)
+    =  t == t'
+    && name == name'
+    && liftEq f as bs
+
+instance Show1 Document where
+  liftShowsPrec sp sl d (Document t name as)
+    = showsUnaryWith
+      (liftShowsPrec sp sl)
+      ("Document " <> show t <> " " <> show name)
+      d as
 
 type Value'RAW = Cofree (ValueF Name) Pos
 
@@ -138,22 +225,11 @@ data Variable'RAW
     , _varDefValue :: Maybe Value'RAW
     } deriving (Eq, Show)
 
-data Field'RAW
-  = Field'RAW
-    { _fieldType :: Maybe Typename
-    , _fieldAlias :: Maybe Name
-    , _fieldName :: Name
-    , _fieldInput :: HashMap Name Value'RAW
-    } deriving (Eq, Show)
+type Field'RAW = FieldF Value'RAW
 
-type SelectionNode'RAW = Cofree SelectionNodeF Pos
+type SelectionNode'RAW = SelectionNode Field'RAW
 
-data Fragment'RAW
-  = Fragment'RAW
-    { _fragPos ::Pos
-    , _fragTypename :: Typename
-    , _fragSelection :: [SelectionNode'RAW]
-    } deriving (Eq, Show)
+type Fragment'RAW = FragmentF SelectionNode'RAW
 
 data Operation'RAW
   = Operation'RAW
@@ -166,23 +242,12 @@ data Operation'RAW
 
 type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
 
--- | Validated AST nodes
-
-data Field
-  = Field
-    { fieldType :: Maybe Typename
-    , fieldAlias :: Maybe Name
-    , fieldName :: Name
-    , fieldInput :: HashMap Name Value
-    } deriving (Eq, Show)
-
-data Document
-  = Document
-    { opType :: OperationType
-    , opName :: Maybe Name
-    , opSelection :: [Selection]
-    } deriving (Eq, Show)
-
 type Value = Cofree (ValueF JSON.Value) (Pos, Maybe TypeDefinition)
 
-type Selection = Cofree (TreeF Field) Pos
+type Field = FieldF Value
+
+type Fragment = FragmentF SelectionSet
+
+type SelectionTree = Cofree (TreeF Field) Pos
+
+type SelectionSet = SelectionNode Field
