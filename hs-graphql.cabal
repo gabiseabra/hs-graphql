@@ -16,12 +16,12 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    GraphQL.Class
+    GraphQL.TypeSystem
+    GraphQL.TypeSystem.Introspection
+    GraphQL.TypeSystem.TypeDefs
     GraphQL.Internal
-    GraphQL.Kinds
     GraphQL.Types
     GraphQL.Selection
-    GraphQL.Resolution
     GraphQL.IO.Input
     GraphQL.IO.Output
   default-language:    Haskell2010

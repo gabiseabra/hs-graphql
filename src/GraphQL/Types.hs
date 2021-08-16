@@ -6,75 +6,100 @@
   , TypeApplications
   , ScopedTypeVariables
   , UndecidableInstances
+  , FlexibleInstances
+  , MultiParamTypeClasses
   , TypeOperators
+  , StandaloneKindSignatures
+  , AllowAmbiguousTypes
 #-}
 
 module GraphQL.Types where
 
-import GraphQL.Class
-import GraphQL.Kinds
+import GraphQL.TypeSystem
 
-import GHC.TypeLits (KnownSymbol)
+import GHC.Exts (Constraint)
+import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 
 import qualified Data.Aeson as JSON
 import Data.Proxy (Proxy(..))
-import Data.Row (type (.+), type (.==))
+import Data.Row (type (.+), type (.==), type (.!))
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import Data.Vector (Vector)
+import qualified Data.Vector as Vec
 import Data.Void (Void)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Data.Typeable (Typeable)
 
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
 
 instance GraphQLType ID where
-  type KindOf ID = SCALAR
-  typename _ = "ID"
+  type KIND ID = SCALAR
+  typeDef = scalarDef "ID"
 
 instance GraphQLType Bool where
-  type KindOf Bool = SCALAR
-  typename _ = "Boolean"
+  type KIND Bool = SCALAR
+  typeDef = scalarDef "Boolean"
 
 instance GraphQLType Int where
-  type KindOf Int = SCALAR
-  typename _ = "Int"
+  type KIND Int = SCALAR
+  typeDef = scalarDef "Int"
 
 instance GraphQLType Integer where
-  type KindOf Integer = SCALAR
-  typename _ = "Int"
+  type KIND Integer = SCALAR
+  typeDef = scalarDef "Int"
 
 instance GraphQLType Float where
-  type KindOf Float = SCALAR
-  typename _ = "Float"
+  type KIND Float = SCALAR
+  typeDef = scalarDef "Float"
 
 instance GraphQLType Double where
-  type KindOf Double = SCALAR
-  typename _ = "Float"
+  type KIND Double = SCALAR
+  typeDef = scalarDef "Float"
 
 instance GraphQLType Text where
-  type KindOf Text = SCALAR
-  typename _ = "String"
+  type KIND Text = SCALAR
+  typeDef = scalarDef "String"
 
 instance GraphQLType Char where
-  type KindOf Char = SCALAR
-  typename _ = "String"
+  type KIND Char = SCALAR
+  typeDef = scalarDef "String"
 
 instance GraphQLType a => GraphQLType (Maybe a) where
-  type KindOf (Maybe a) = NULLABLE (KindOf a)
-  typename _ = typename (Proxy @a)
+  type KIND (Maybe a) = NULLABLE (KIND a)
+  typeDef = NullableType "Nullable" (typeDef @a) $ NullableDef id id
+
+instance GraphQLType a => GraphQLType (Vector a) where
+  type KIND (Vector a) = LIST (KIND a)
+  typeDef = ListType "Vector" (typeDef @a) $ ListDef id Just
+
+instance GraphQLType a => GraphQLType (NonEmpty a) where
+  type KIND (NonEmpty a) = LIST (KIND a)
+  typeDef = ListType "NonEmpty" (typeDef @a) $ ListDef (Vec.fromList . NE.toList) (NE.nonEmpty . Vec.toList)
 
 type family StringOrListK a where
   StringOrListK String = "String"
   StringOrListK a      = "List"
 
-type StringOrList t
-  =  "String" .== SCALAR
-  .+ "List"   .== LIST t
+type List_GraphQLType :: Symbol -> * -> Constraint
+class List_GraphQLType sym a where
+  type LIST_KIND sym a :: TypeKind
+  list_typeDef :: TypeDef (LIST_KIND sym a) a
+
+instance List_GraphQLType "String" String where
+  type LIST_KIND "String" String = SCALAR
+  list_typeDef = scalarDef "String"
+
+instance GraphQLType a => List_GraphQLType "List" [a] where
+  type LIST_KIND "List" [a] = LIST (KIND a)
+  list_typeDef = ListType "List" (typeDef @a) $ ListDef Vec.fromList (Just . Vec.toList)
 
 instance
   ( StringOrListK [a] ~ sym
   , KnownSymbol sym
-  , GraphQLType a
-  , GraphQLKind (sym .@ StringOrList (KindOf a))
-  , GraphQLTypeable (sym .@ StringOrList (KindOf a)) [a]
+  , List_GraphQLType sym [a]
+  , Typeable [a]
   ) => GraphQLType [a] where
-  type KindOf [a] = (StringOrListK [a] .@ StringOrList (KindOf a))
-  typename _ = typename (Proxy @a)
+  type KIND [a] = LIST_KIND (StringOrListK [a]) [a]
+  typeDef = list_typeDef @sym @[a]

@@ -1,8 +1,11 @@
 {-# LANGUAGE
     TypeFamilies
+  , DataKinds
+  , PolyKinds
   , DeriveGeneric
   , OverloadedStrings
   , TypeApplications
+  , MultiParamTypeClasses
 #-}
 
 module Examples.ObjectSpec where
@@ -12,25 +15,27 @@ import Test.Utils
 
 import GHC.Generics (Generic)
 
-import GraphQL.Class (GraphQLType(..))
-import GraphQL.Kinds
+import GraphQL.TypeSystem
 import GraphQL.Types
 
 import Control.Monad ((<=<))
 import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
+import qualified Data.Text as Text
+import Data.Proxy (Proxy(..))
+import Data.Typeable (Typeable)
 
 data A m
   = A
     { a0 :: () -> m Int
     , a1 :: () -> m (Maybe String)
     , a2 :: () -> m [A m]
-    } deriving (Generic)
+    } deriving (Generic, Typeable)
 
-instance Applicative m => GraphQLType (A m) where
-  type KindOf (A m) = OBJECT m
-  typename _ = "A"
+instance (Typeable m, Applicative m) => GraphQLType (A m) where
+  type KIND (A m) = OBJECT @m
+  typeDef = resolverDef "A"
 
 a :: A IO
 a = A { a0 = \_ -> pure 420
@@ -38,9 +43,49 @@ a = A { a0 = \_ -> pure 420
       , a2 = \_ -> pure [a, a, a]
       }
 
+data B
+  = B
+    { b0 :: Int
+    , b1 :: Maybe String
+    } deriving (Typeable)
+
+instance GraphQLField IO B "test_b0" where
+  type OutputOf B "test_b0" = Int
+  fieldDef = FieldDef Nothing $ \() -> pure . b0
+
+instance GraphQLField IO B "test_b1" where
+  type OutputOf B "test_b1" = Maybe Text
+  fieldDef = FieldDef Nothing $ \() -> pure . fmap Text.pack . b1
+
+instance GraphQLField IO B "test_b2" where
+  type OutputOf B "test_b2" = [B]
+  fieldDef = FieldDef Nothing $ \() -> pure . replicate 2
+
+instance GraphQLType B where
+  type KIND B = OBJECT @IO
+  typeDef = canonicalDef "B" $ Proxy @["test_b0", "test_b1", "test_b2"]
+
+b = B 420 (Just "eyy") :: B
+
+
+data C = C { c0 :: Int } deriving (Generic, Typeable)
+
+instance GraphQLType C where
+  type KIND C = OBJECT @IO
+  typeDef = objectDef "C"
+
+c = C 420 :: C
+
 spec :: Spec
-spec = describe "Examples.ObjectSpec" $ do
-  it "resolves selected fields" $ do
+spec = do
+  resolverSpec
+  canonicalSpec
+  objectSpec
+  validationSpec
+
+resolverSpec :: Spec
+resolverSpec = describe "resolverDef" $ do
+  it "resolves" $ do
     let
       s = [ sel_ "__typename" &: []
           , sel_ "a0" &: []
@@ -56,22 +101,56 @@ spec = describe "Examples.ObjectSpec" $ do
               ]
           ]
     exec s a `shouldReturn` o
+
+canonicalSpec :: Spec
+canonicalSpec = describe "canonicalDef" $ do
+  it "resolves" $ do
+    let
+      s = [ sel_ "__typename" &: []
+          , sel_ "test_b0" &: []
+          , sel_ "test_b2" &: [ sel_ "test_b1" &: [] ]
+          ]
+      o = object
+          [ "__typename" .= ("B" :: String)
+          , "test_b0" .= (420 :: Int)
+          , "test_b2" .=
+              [ object [ "test_b1" .= ("eyy" :: String) ]
+              , object [ "test_b1" .= ("eyy" :: String) ]
+              ]
+          ]
+    exec s b `shouldReturn` o
+
+objectSpec :: Spec
+objectSpec = describe "objectDef" $ do
+  it "resolves" $ do
+    let
+      s = [ sel_ "__typename" &: []
+          , sel_ "c0" &: []
+          ]
+      o = object
+          [ "__typename" .= ("C" :: String)
+          , "c0" .= (420 :: Int)
+          ]
+    exec s c `shouldReturn` o
+
+validationSpec :: Spec
+validationSpec = describe "validation" $ do
   it "fails with empty selection on objects" $ do
-    eval @(A IO) [] `shouldBe` Left "Invalid selection"
+    eval @(A IO) [] `shouldBe` Left "Object type A must have a selection"
   it "fails with non-empty selection on scalars" $ do
     let s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Invalid selection"
+    eval @(A IO) s `shouldBe` Left "Scalar type Int cannot have a selection"
   it "fails with mismatched typename" $ do
     let s = [ sel_ "a0" `on` "X" &: [] ]
     eval @(A IO) s `shouldBe` Left "Typename mismatch: Expected A, got X"
   it "fails invalid selection" $ do
     let s = [ sel_ "x" &: [] ]
-    eval @(A IO) s `shouldBe` Left "Field x doesn't exist on type A"
+    eval @(A IO) s `shouldBe` Left "Field x does not exist in object of type A"
   it "fails with non-empty selection on __typename" $ do
     let s = [ sel_ "__typename" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Invalid selection: __typename does not have fields"
+    eval @(A IO) s `shouldBe` Left "Field __typename cannot have a selection"
   it "fails with non-empty input on __typename" $ do
     let
       i = object [ "a" .= True ]
       s = [ sel "__typename" i &: [] ]
-    eval @(A IO) s `shouldBe` Left "Invalid selection: __typename does not have arguments"
+    eval @(A IO) s `shouldBe` Left "Field __typename does not have arguments"
