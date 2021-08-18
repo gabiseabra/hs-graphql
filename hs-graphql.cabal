@@ -44,6 +44,7 @@ library
     , unordered-containers
     , vector
     , megaparsec
+    , parser-combinators >=1.0 && <2.0
     , scientific
 
 test-suite hs-graphql-test

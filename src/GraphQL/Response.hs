@@ -1,20 +1,25 @@
+{-# LANGUAGE
+    OverloadedStrings
+#-}
+
 module GraphQL.Response where
 
 import qualified Data.Aeson as JSON
 import Data.Aeson (object, (.=))
 import GraphQL.AST.Document (Name, Pos)
 import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.List.NonEmpty (NonEmpty(..))
 import Text.Megaparsec.Error (ShowErrorComponent(..))
 
 data Response
   = Response
-    { data :: JSON.Value
-    , errors :: Maybe (NonEmpty GraphQLError)
+    { resData :: JSON.Value
+    , resErrors :: Maybe (NonEmpty GraphQLError)
     } deriving (Eq, Show)
 
 instance JSON.ToJSON Response where
-  toJSON (Response data errors) = object ["data" .= data, "errors" .= errors]
+  toJSON (Response a e) = object ["data" .= a, "errors" .= e]
 
 type Path = [Text]
 

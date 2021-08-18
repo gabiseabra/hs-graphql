@@ -16,8 +16,8 @@ import GraphQL.AST
   , TypeDefinition(..)
   , ValueF(..)
   , FieldF(..)
-  , Document(..)
-  , SelectionTree
+  , DocumentF(..)
+  , FieldSet
   , parseDocument
   , collectFields
   )
@@ -29,6 +29,8 @@ import qualified Data.Aeson as JSON
 import Data.Text (Text)
 import Text.Megaparsec (runParserT)
 import Text.Megaparsec.Error (ParseErrorBundle)
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text (readFile)
@@ -38,7 +40,7 @@ import Data.Functor.Identity (Identity(..))
 pos :: Int -> Int -> Pos
 pos line col = (Pos line col)
 
-parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V (Document SelectionTree))
+parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V (DocumentF FieldSet))
 parseTest' op (JSON.Object i) f = (uncurry collectFields <=< parseDocument f op i) <$> Text.readFile f
 parseTest = parseTest' Nothing
 parseTestNamed = parseTest' . Just
@@ -85,7 +87,7 @@ spec = describe "document" $ do
         , ("inlineStr", (pos 20 20, Nothing) :< StrVal "inline string")
         , ("multilineStr", (pos 21 20, Nothing) :< StrVal "    multiline\n\n    \"string\"\n    ")
         ]
-      doc = Document Query Nothing
+      doc = Query Nothing $ NE.fromList
         [ (pos 6 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
         , (pos 7 3) :< NodeF (Field Nothing Nothing "b" mempty)  []
         , (pos 8 3) :< NodeF (Field Nothing Nothing "c" vars'c)  []
@@ -102,7 +104,7 @@ spec = describe "document" $ do
       vars'b = Map.fromList
         [ ("var", (pos 3 10, Nothing) :< IntVal 420)
         ]
-      doc = Document Query Nothing
+      doc = Query Nothing $ NE.fromList
         [ (pos 2 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
         , (pos 3 3) :< NodeF (Field Nothing Nothing "b" vars'b)  []
         , (pos 4 3) :< NodeF (Field Nothing (Just "alias") "c" mempty)
@@ -120,22 +122,21 @@ spec = describe "document" $ do
       `shouldReturn` Right doc
   it "test/queries/good_selection_shorthand_query.graphql" $ do
     let
-      doc = Document Query Nothing
+      doc = Query Nothing $ NE.fromList
         [ (pos 1 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
         ]
     parseTest (object []) "test/queries/good_selection_shorthand_query.graphql"
       `shouldReturn` Right doc
   it "test/queries/good_selection_multiple_named_operations.graphql" $ do
     let
-      query = Document Query (Just "Query")
+      query = Query (Just "Query") $ NE.fromList
         [ (pos 1 15) :< NodeF (Field Nothing Nothing "a" mempty)  []
         ]
-      mutation = Document Mutation (Just "Mutation")
+      mutation = Mutation (Just "Mutation") $ NE.fromList
         [ (pos 2 21) :< NodeF (Field Nothing Nothing "b" mempty)  []
         ]
-      subscription = Document Subscription (Just "Subscription")
-        [ (pos 3 29) :< NodeF (Field Nothing Nothing "c" mempty)  []
-        ]
+      subscription = Subscription (Just "Subscription") $
+        (pos 3 29) :< NodeF (Field Nothing Nothing "c" mempty)  []
     parseTestNamed "Query" (object []) "test/queries/good_selection_multiple_named_operations.graphql"
       `shouldReturn` Right query
     parseTestNamed "Mutation" (object []) "test/queries/good_selection_multiple_named_operations.graphql"

@@ -14,10 +14,11 @@ module GraphQL.AST
   , FieldF(..)
   , SelectionNodeF(..)
   , FragmentF(..)
-  , Document(..)
+  , DocumentF(..)
+  , Document
   , Value
   , Fragment
-  , SelectionTree
+  , FieldSet
   , SelectionSet
   , parseDocument
   , collectFields
@@ -26,7 +27,7 @@ module GraphQL.AST
 import GraphQL.AST.Document
 import GraphQL.AST.Validation
 import GraphQL.AST.Parser
-import GraphQL.Error
+import GraphQL.Response
 
 import Control.Monad ((<=<))
 import Data.Bifunctor (first, second)
@@ -47,7 +48,7 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-parseDocument :: FilePath -> Maybe Name -> Input -> Text -> V (HashMap Name Fragment, Document SelectionSet)
+parseDocument :: FilePath -> Maybe Name -> Input -> Text -> V (HashMap Name Fragment, DocumentF SelectionSet)
 parseDocument path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError

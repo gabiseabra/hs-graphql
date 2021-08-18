@@ -1,5 +1,7 @@
 {-# LANGUAGE
     TypeFamilies
+  , GADTs
+  , DataKinds
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
@@ -20,7 +22,10 @@ module GraphQL.AST.Document
   , SelectionNode
   , FieldF(..)
   , FragmentF(..)
-  , Document(..)
+  , DocumentF(..)
+  , opType
+  , opName
+  , opSelection
   , Value'RAW
   , Variable'RAW(..)
   , Field'RAW
@@ -31,24 +36,26 @@ module GraphQL.AST.Document
   , Value
   , Field
   , Fragment
-  , SelectionTree
+  , FieldSet
   , SelectionSet
+  , Document
   ) where
 
-import GHC.Generic (Generic)
+import GHC.Generics (Generic)
 
 import Control.Comonad.Cofree (Cofree)
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
 import Data.Bitraversable (Bitraversable(..))
-import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.Text (Text)
 import Data.Fix (Fix)
 import Data.Functor.Base (TreeF)
 import Data.HashMap.Strict (HashMap)
+import Data.Functor.Identity (Identity(..))
 import Data.Functor.Foldable (Base, Recursive(..))
-import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith)
+import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
 import qualified Text.Megaparsec.Pos as P
 
 type Typename = Text
@@ -64,9 +71,9 @@ mkPos :: P.SourcePos -> Pos
 mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
 
 data OperationType
-  = Query
-  | Mutation
-  | Subscription
+  = QUERY
+  | MUTATION
+  | SUBSCRIPTION
   deriving (Eq, Show)
 
 data ValueF a r
@@ -150,7 +157,7 @@ instance Show1 FieldF where
 data SelectionNodeF a r
   = Node a [r]
   | FragmentSpread Name
-  | InlineFragment Typename [r]
+  | InlineFragment Typename (NonEmpty r)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 type SelectionNode a = Cofree (SelectionNodeF a) Pos
@@ -185,7 +192,7 @@ data FragmentF a
   = Fragment
     { fragPos ::Pos
     , fragTypename :: Typename
-    , fragSelection :: [a]
+    , fragSelection :: NonEmpty a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
 instance Eq1 FragmentF where
@@ -201,25 +208,39 @@ instance Show1 FragmentF where
       ("Fragment " <> show pos <> " " <> show ty)
       d as
 
-data Document a
-  = Document
-    { opType :: OperationType
-    , opName :: Maybe Name
-    , opSelection :: [a]
-    } deriving (Eq, Show, Functor, Foldable, Traversable)
+data DocumentF a
+  = Query        (Maybe Name) (NonEmpty a)
+  | Mutation     (Maybe Name) (NonEmpty a)
+  | Subscription (Maybe Name) a
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Eq1 Document where
-  liftEq f (Document t name as) (Document t' name' bs)
-    =  t == t'
-    && name == name'
-    && liftEq f as bs
+opType :: DocumentF a -> OperationType
+opType (Query        _ _) = QUERY
+opType (Mutation     _ _) = MUTATION
+opType (Subscription _ _) = SUBSCRIPTION
 
-instance Show1 Document where
-  liftShowsPrec sp sl d (Document t name as)
-    = showsUnaryWith
-      (liftShowsPrec sp sl)
-      ("Document " <> show t <> " " <> show name)
-      d as
+opName :: DocumentF a -> Maybe Name
+opName (Query        name _) = name
+opName (Mutation     name _) = name
+opName (Subscription name _) = name
+
+opSelection :: DocumentF a -> NonEmpty a
+opSelection (Query        _ as) = as
+opSelection (Mutation     _ as) = as
+opSelection (Subscription _ a ) = a:|[]
+
+instance Eq1 DocumentF where
+  liftEq f (Query        name as) (Query        name' bs) = name == name' && liftEq f as bs
+  liftEq f (Mutation     name as) (Mutation     name' bs) = name == name' && liftEq f as bs
+  liftEq f (Subscription name a ) (Subscription name' b ) = name == name' && liftEq f (Identity a) (Identity b)
+
+instance Show1 DocumentF where
+  liftShowsPrec sp sl d (Query name as)
+    = showsUnaryWith (liftShowsPrec sp sl) ("Query " <> show name) d as
+  liftShowsPrec sp sl d (Mutation name as)
+    = showsUnaryWith (liftShowsPrec sp sl) ("Mutation " <> show name) d as
+  liftShowsPrec sp sl d (Subscription name a)
+    = showsUnaryWith sp ("Subscription" <> show name) d a
 
 type Value'RAW = Cofree (ValueF Name) Pos
 
@@ -242,7 +263,7 @@ data Operation'RAW
     , _opType :: OperationType
     , _opName :: Maybe Name
     , _opVariables :: HashMap Name Variable'RAW
-    , _opSelection :: [SelectionNode'RAW]
+    , _opSelection :: NonEmpty SelectionNode'RAW
     } deriving (Eq, Show)
 
 type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
@@ -253,6 +274,8 @@ type Field = FieldF Value
 
 type Fragment = FragmentF SelectionSet
 
-type SelectionTree = Cofree (TreeF Field) Pos
+type FieldSet = Cofree (TreeF Field) Pos
 
 type SelectionSet = SelectionNode Field
+
+type Document = DocumentF FieldSet

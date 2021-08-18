@@ -2,6 +2,7 @@
     OverloadedStrings
   , TupleSections
   , RankNTypes
+  , RecordWildCards
 #-}
 
 module GraphQL.AST.Validation
@@ -13,10 +14,11 @@ module GraphQL.AST.Validation
 
 import GraphQL.AST.Document
 import GraphQL.AST.Lexer (Parser)
-import GraphQL.Error (V)
-import qualified GraphQL.Error as E
+import GraphQL.Response (V)
+import qualified GraphQL.Response as E
 
 import Control.Comonad.Cofree (Cofree(..), unfoldM)
+import Control.Monad (join, (<=<))
 import Control.Monad.Trans (lift)
 import Control.Monad.State.Lazy (StateT(..))
 import qualified Control.Monad.State.Lazy as ST
@@ -37,13 +39,19 @@ import qualified Data.Text as Text
 import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
 
-validateDocument :: Maybe Name -> Input -> RootNodes'RAW -> V (HashMap Name Fragment, Document SelectionSet)
+validateDocument :: Maybe Name -> Input -> RootNodes'RAW -> V (HashMap Name Fragment, DocumentF SelectionSet)
 validateDocument opName input (frags, ops) = do
-  op <- getOperation opName ops
-  let fn = hoistM $ bitraverse (validateField (Map.filter (/= JSON.Null) input) (_opVariables op)) pure
-  sel' <- traverse fn $ _opSelection op
-  frags' <- traverse (traverse fn) frags
-  pure (frags', Document (_opType op) (_opName op) sel')
+  Operation'RAW { .. } <- getOperation opName ops
+  let
+    fn = validateSelectionSet input $ _opVariables
+  (,) <$> traverse (traverse fn) frags
+      <*> (mkDocument _opPos _opType _opName =<< traverse fn _opSelection)
+
+mkDocument :: Pos -> OperationType -> Maybe Name -> NonEmpty a -> V (DocumentF a)
+mkDocument _   QUERY        name sel       = pure $ Query name sel
+mkDocument _   MUTATION     name sel       = pure $ Mutation name sel
+mkDocument _   SUBSCRIPTION name (sel:|[]) = pure $ Subscription name sel
+mkDocument pos _ _ _ = E.validationError [pos] "Subscription operation must have only one root field"
 
 getOperation :: Maybe Name -> NonEmpty Operation'RAW -> V Operation'RAW
 getOperation Nothing (op:|[]) = pure op
@@ -55,25 +63,30 @@ getOperation (Just opName) ops =
 
 collectFields
   :: HashMap Name Fragment
-  -> Document SelectionSet
-  -> V (Document SelectionTree)
+  -> DocumentF SelectionSet
+  -> V Document
 collectFields frags doc = do
-  (sel, visited) <- runStateT (foldMapM (eraseFragments frags) $ opSelection doc) mempty
+  (sel, visited) <- runStateT (traverseAccum (eraseFragments frags) $ opSelection doc) mempty
   let unused = Map.filterWithKey (\k _ -> Set.notMember k visited) frags
   if length visited == length frags
-    then pure $ doc { opSelection = sel }
+    then pure $ setSelection doc sel
     else E.validationError (fmap fragPos $ Map.elems unused)
           $ "Document has unused fragments: "
           <> Text.intercalate ", " (Map.keys unused)
 
+setSelection :: DocumentF a -> NonEmpty b -> DocumentF b
+setSelection (Query        name _) as     = Query        name as
+setSelection (Mutation     name _) as     = Mutation     name as
+setSelection (Subscription name _) (a:|_) = Subscription name a
+
 eraseFragments
   :: HashMap Name (FragmentF (SelectionNode a))
   -> SelectionNode a
-  -> StateT (Set Name) V [Cofree (TreeF a) Pos]
+  -> StateT (Set Name) V (NonEmpty (Cofree (TreeF a) Pos))
 eraseFragments frags (pos :< Node a as) =
-  pure . (pos :<) . NodeF a <$> foldMapM (eraseFragments frags) as
+  pure . (pos :<) . NodeF a <$> traverseAccum (fmap NE.toList . eraseFragments frags) as
 eraseFragments frags (_ :< InlineFragment _ as) =
-  foldMapM (eraseFragments frags) as
+  traverseAccum (eraseFragments frags) as
 eraseFragments frags (pos :< FragmentSpread k) = do
   visited <- ST.get
   if Set.member k visited
@@ -82,7 +95,11 @@ eraseFragments frags (pos :< FragmentSpread k) = do
       Nothing   -> lift $ E.validationError [pos] $ "Fragment " <> k <> " is not defined"
       Just frag -> do
         ST.put (Set.insert k visited)
-        foldMapM (eraseFragments frags) $ fragSelection frag
+        traverseAccum (eraseFragments frags) $ fragSelection frag
+
+validateSelectionSet :: Input -> HashMap Name Variable'RAW -> SelectionNode'RAW -> V SelectionSet
+validateSelectionSet input vars = hoistM $ bitraverse (validateField input' vars) pure
+  where input' = Map.filter (/= JSON.Null) input
 
 validateField :: Input -> HashMap Name Variable'RAW -> Field'RAW -> V Field
 validateField input vars field = do
@@ -167,12 +184,12 @@ parseErrorP pos msg = customFailure $ E.ParseError pos msg
 validationErrorP :: [Pos] -> Text -> Parser a
 validationErrorP pos msg = customFailure $ E.ValidationError pos msg
 
-foldMapM :: Applicative m => Monoid b => Foldable f => (a -> m b) -> f a -> m b
-foldMapM f = foldr (\a bs -> mappend <$> f a <*> bs) (pure mempty)
-
 dupesWith :: (a -> a -> Bool) -> [a] -> [a]
 dupesWith _ [] = []
 dupesWith f (x:xs) = filter (f x) xs ++ dupesWith f xs
+
+traverseAccum :: (Monad m, Traversable f, Monad f) => (a -> m (f b)) -> f a -> m (f b)
+traverseAccum f = pure . join <=< traverse f
 
 att :: a -> Cofree f a -> Cofree f a
 att a (_:<f) = (a:<f)
