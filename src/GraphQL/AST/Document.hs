@@ -3,6 +3,8 @@
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
+  , DeriveGeneric
+  , DeriveAnyClass
 #-}
 
 module GraphQL.AST.Document
@@ -33,6 +35,8 @@ module GraphQL.AST.Document
   , SelectionSet
   ) where
 
+import GHC.Generic (Generic)
+
 import Control.Comonad.Cofree (Cofree)
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..))
@@ -53,7 +57,8 @@ type Name = Text
 
 type Input = JSON.Object
 
-data Pos = Pos { line :: Int, column :: Int } deriving (Eq, Show, Ord)
+data Pos = Pos { line :: Int, column :: Int }
+  deriving (Eq, Show, Ord, Generic, JSON.ToJSON)
 
 mkPos :: P.SourcePos -> Pos
 mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)

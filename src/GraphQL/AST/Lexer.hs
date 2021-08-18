@@ -34,7 +34,7 @@ module GraphQL.AST.Lexer
   )
   where
 
-import GraphQL.Error (GraphQLError(..))
+import GraphQL.Response (GraphQLError(..))
 import GraphQL.AST.Document (Pos(..), Pos(..), mkPos)
 
 import Control.Applicative ((<|>), empty)

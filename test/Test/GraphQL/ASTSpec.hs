@@ -8,7 +8,7 @@ import Test.Hspec
 
 import GHC.Generics (Generic)
 
-import GraphQL.Error
+import GraphQL.Response
 import GraphQL.AST
   ( Input
   , Pos(..)

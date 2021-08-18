@@ -17,7 +17,7 @@
 module GraphQL.TypeSystem.TypeDefs where
 
 import GraphQL.Internal
-import GraphQL.TypeSystem.Introspection
+import GraphQL.TypeSystem.Main
 
 import GHC.Exts (Constraint)
 import qualified GHC.Generics as GR

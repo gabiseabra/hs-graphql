@@ -17,7 +17,7 @@
   , PolyKinds
 #-}
 
-module GraphQL.TypeSystem.Introspection
+module GraphQL.TypeSystem.Main
   ( Typename
   , Some(..)
   , TypeKind(..)
