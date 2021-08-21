@@ -17,6 +17,7 @@
 module GraphQL.TypeSystem.TypeDefs where
 
 import GraphQL.Internal
+import GraphQL.Response (Response)
 import GraphQL.TypeSystem.Main
 
 import GHC.Exts (Constraint)
@@ -36,6 +37,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Proxy (Proxy(..))
 import Data.Functor.Compose (Compose(..))
+import Data.Profunctor.Cayley (Cayley(..))
 import Data.Coerce (coerce)
 
 scalarDef :: forall a
@@ -153,6 +155,34 @@ canonicalDef ty _
   $ Map.fromList
   $ getFields @sym @m @a
 
+queryDef :: forall m a r
+  .  Rec.FromNative a
+  => Row.AllUniqueLabels (Rec.NativeRow a)
+  => Row.Forall (Rec.NativeRow a) (GraphQLResolver m)
+  => Row.FreeForall (Rec.NativeRow a)
+  => Typename
+  -> (Response -> m r)
+  -> TypeDef (ROOT @QUERY @m @r) a
+queryDef ty f
+  = RootType ty
+  $ QueryDef f
+  $ mkFieldMap @(GraphQLResolver m)
+  $ Some . resolverFieldDef
+
+mutationDef :: forall m a r
+  .  Rec.FromNative a
+  => Row.AllUniqueLabels (Rec.NativeRow a)
+  => Row.Forall (Rec.NativeRow a) (GraphQLResolver m)
+  => Row.FreeForall (Rec.NativeRow a)
+  => Typename
+  -> (Response -> m r)
+  -> TypeDef (ROOT @MUTATION @m @r) a
+mutationDef ty f
+  = RootType ty
+  $ MutationDef f
+  $ mkFieldMap @(GraphQLResolver m)
+  $ Some . resolverFieldDef
+
 class GraphQLResolver m a where
   type ResolverOutput a :: *
   resolverFieldDef :: (ctx -> a) -> FieldDef (ResolverT ctx) m (ResolverOutput a)
@@ -191,6 +221,17 @@ instance
         where
           desc = description @m @a @sym
           res = Compose . resolver @m @a @sym
+
+class GraphQLProducer m r a where
+  type ProducerOutput a :: *
+  producerFieldDef :: (ctx -> a) -> FieldDef (Cayley ((->) ctx) (ProducerT r)) m (ProducerOutput a)
+
+instance
+  ( GraphQLInput i
+  , GraphQLOutputType m a
+  ) => GraphQLProducer m r (i -> (a -> m Response) -> m r) where
+  type ProducerOutput (i -> (a -> m Response) -> m r) = a
+  producerFieldDef = FieldDef Nothing . ((Cayley . (Producer .)) .) . flip
 
 mkFieldMap :: forall c a m
   .  Rec.FromNative a

@@ -20,6 +20,7 @@
 module GraphQL.TypeSystem.Main where
 
 import GraphQL.Internal
+import GraphQL.Response
 
 import GHC.Exts (Constraint)
 
@@ -34,6 +35,7 @@ import Data.Text (Text)
 import Data.Proxy (Proxy)
 import Data.Typeable (Typeable)
 import Data.Functor.Compose (Compose)
+import Data.Profunctor.Cayley (Cayley)
 
 type Typename = Text
 
@@ -46,13 +48,14 @@ data OperationType
   deriving (Eq, Show)
 
 data TypeKind where
-  SCALAR       ::                       TypeKind
-  ENUM         ::                       TypeKind
-  INPUT_OBJECT ::                       TypeKind
-  OBJECT       :: forall (m :: * -> *). TypeKind
-  UNION        :: forall (m :: * -> *). TypeKind
-  LIST         :: TypeKind           -> TypeKind
-  NULLABLE     :: TypeKind           -> TypeKind
+  SCALAR       ::                                                TypeKind
+  ENUM         ::                                                TypeKind
+  INPUT_OBJECT ::                                                TypeKind
+  OBJECT       :: forall (m :: * -> *)                         . TypeKind
+  UNION        :: forall (m :: * -> *)                         . TypeKind
+  LIST         :: TypeKind                                    -> TypeKind
+  NULLABLE     :: TypeKind                                    -> TypeKind
+  ROOT         :: forall (op :: OperationType) (m :: * -> *) r . TypeKind
 
 data TypeIO = IN | OUT
 
@@ -60,20 +63,21 @@ type family k ?>> io where
   SCALAR       ?>> io  = True
   ENUM         ?>> io  = True
   INPUT_OBJECT ?>> IN  = True
-  UNION        ?>> OUT = True
-  OBJECT       ?>> OUT = True
+  UNION  @m    ?>> OUT = True
+  OBJECT @m    ?>> OUT = True
   (k' k)       ?>> io  = k ?>> io
   k            ?>> io  = False
 
 type k !>> io = k ?>> io ~ True
 
 type family k || m where
-  SCALAR       || m = m
-  ENUM         || m = m
-  INPUT_OBJECT || m = m
-  UNION @m0    || m = m0
-  OBJECT @m0   || m = m0
-  (k' k)       || m = k || m
+  SCALAR        || m = m
+  ENUM          || m = m
+  INPUT_OBJECT  || m = m
+  UNION   @m    || _ = m
+  OBJECT  @m    || _ = m
+  ROOT @_ @m @_ || _ = m
+  (k' k)        || m = k || m
 
 type k !! m = k || m ~ m
 
@@ -89,6 +93,9 @@ instance (GraphQLType a, KIND a !>> OUT, KIND a !! m) => GraphQLOutputType m a
 
 class (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
 instance (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
+
+class (GraphQLType a, KIND a ~ ROOT @op @m @r) => GraphQLRootType op m r a
+instance (GraphQLType a, KIND a ~ ROOT @op @m @r) => GraphQLRootType op m r a
 
 class GraphQLInput a where
   inputDef :: InputDef a
@@ -117,6 +124,7 @@ data TypeDef k a where
   UnionType       :: Typename -> Maybe Text  -> UnionDef       m a -> TypeDef (UNION @m)   a
   ListType        :: Typename -> TypeDef k a -> ListDef          f -> TypeDef (LIST k)     (f a)
   NullableType    :: Typename -> TypeDef k a -> NullableDef      f -> TypeDef (NULLABLE k) (f a)
+  RootType        :: Typename -> RootDef op m a r                  -> TypeDef (ROOT @op @m @r) a
 
 typename :: TypeDef k a -> Typename
 typename (ScalarType      ty _ _) = ty
@@ -126,6 +134,7 @@ typename (InputObjectType ty _ _) = ty
 typename (UnionType       ty _ _) = ty
 typename (ListType        ty _ _) = ty
 typename (NullableType    ty _ _) = ty
+typename (RootType        ty _  ) = ty
 
 type ScalarDef :: * -> *
 data ScalarDef a
@@ -166,6 +175,8 @@ data FieldDef t m a where
 type ResolverT a = Compose ((->) a)
 type Resolver m a = Some (FieldDef (ResolverT a) m)
 
+data ProducerT r m a = Producer { runProducer :: (a -> m Response) -> m r }
+type Producer r m a = Some (FieldDef (Cayley ((->) a) (ProducerT r)) m)
 
 type InputObjectDef :: * -> *
 data InputObjectDef a where
@@ -182,10 +193,10 @@ data InputValueDef a
     }
 
 type UnionDef :: (* -> *) -> * -> *
-data UnionDef m a where
-  UnionDef ::
-    { unionResolver :: Map Typename (Case m a)
-    } -> UnionDef m a
+data UnionDef m a
+  = UnionDef
+    { unionTypes :: Map Typename (Case m a)
+    }
 
 data Case m a where Case :: GraphQLObjectType m b => (a -> Maybe b) -> Case m a
 
@@ -206,3 +217,9 @@ data NullableDef f where
     { encodeNullable :: forall a. f a -> Maybe a
     , decodeNullable :: forall a. Maybe a -> f a
     } -> NullableDef f
+
+type RootDef :: OperationType -> (* -> *) -> * -> * -> *
+data RootDef op m a r where
+  QueryDef        :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef QUERY        m a r
+  MutationDef     :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef MUTATION     m a r
+  SubscriptionDef ::                      Map Text (Producer r m a) -> RootDef SUBSCRIPTION m a r
