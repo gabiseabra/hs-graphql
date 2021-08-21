@@ -1,5 +1,6 @@
 {-# LANGUAGE
     OverloadedStrings
+  , OverloadedLists
 #-}
 
 module Test.GraphQL.ASTSpec where
@@ -10,8 +11,7 @@ import GHC.Generics (Generic)
 
 import GraphQL.Response
 import GraphQL.AST
-  ( Input
-  , Pos(..)
+  ( Pos(..)
   , OperationType(..)
   , TypeDefinition(..)
   , ValueF(..)

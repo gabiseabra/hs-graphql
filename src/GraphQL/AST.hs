@@ -1,12 +1,11 @@
 {-# LANGUAGE
     TupleSections
+  , GADTs
   , OverloadedStrings
 #-}
 
 module GraphQL.AST
-  ( Typename
-  , Name
-  , Input
+  ( Name
   , Pos(..)
   , OperationType(..)
   , TypeDefinition(..)
@@ -20,6 +19,7 @@ module GraphQL.AST
   , Fragment
   , FieldSet
   , SelectionSet
+  , typeDefinition
   , parseDocument
   , collectFields
   ) where
@@ -29,9 +29,11 @@ import GraphQL.AST.Validation
 import GraphQL.AST.Parser
 import GraphQL.AST.Lexer (mkPos)
 import GraphQL.Response
+import qualified GraphQL.TypeSystem as TS
 
 import Control.Monad ((<=<))
 import Data.Bifunctor (first, second)
+import qualified Data.Aeson as JSON
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Set as Set
@@ -49,7 +51,14 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-parseDocument :: FilePath -> Maybe Name -> Input -> Text -> V (HashMap Name Fragment, DocumentF SelectionSet)
+typeDefinition :: TS.TypeDef k a -> TypeDefinition
+typeDefinition (TS.ListType     _ def _) = ListType $ typeDefinition def
+typeDefinition (TS.NullableType _ def _) = case typeDefinition def of
+  (NonNullType ty) -> ty
+  ty               -> ty
+typeDefinition def = NonNullType $ NamedType $ TS.typename def
+
+parseDocument :: FilePath -> Maybe Name -> JSON.Object -> Text -> V (HashMap Name Fragment, DocumentF SelectionSet)
 parseDocument path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError

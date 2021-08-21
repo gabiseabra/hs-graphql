@@ -8,9 +8,7 @@
 #-}
 
 module GraphQL.AST.Document
-  ( Typename
-  , Name
-  , Input
+  ( Name
   , OperationType(..)
   , ValueF(..)
   , TypeDefinition(..)
@@ -46,7 +44,9 @@ import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
 import Data.Bitraversable (Bitraversable(..))
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Vector (Vector)
 import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Fix (Fix)
 import Data.Functor.Base (TreeF)
 import Data.HashMap.Strict (HashMap)
@@ -54,11 +54,7 @@ import Data.Functor.Identity (Identity(..))
 import Data.Functor.Foldable (Base, Recursive(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
 
-type Typename = Text
-
 type Name = Text
-
-type Input = JSON.Object
 
 data ValueF a r
   = NullVal
@@ -68,7 +64,7 @@ data ValueF a r
   | DoubleVal Double
   | BoolVal Bool
   | EnumVal Text
-  | ListVal [r]
+  | ListVal (Vector r)
   | ObjectVal (HashMap Name r)
   deriving (Functor, Foldable, Traversable)
 
@@ -113,12 +109,17 @@ instance
 data TypeDefinition
   = ListType TypeDefinition
   | NonNullType TypeDefinition
-  | NamedType Typename
-  deriving (Eq, Show)
+  | NamedType Name
+  deriving (Eq)
+
+instance Show TypeDefinition where
+  show (ListType ty) = "[" <> show ty <> "]"
+  show (NonNullType ty) = show ty <> "!"
+  show (NamedType ty) = Text.unpack ty
 
 data FieldF a
   = Field
-    { fieldType :: Maybe Typename
+    { fieldType :: Maybe Name
     , fieldAlias :: Maybe Name
     , fieldName :: Name
     , fieldArgs :: HashMap Name a
@@ -141,7 +142,7 @@ instance Show1 FieldF where
 data SelectionNodeF a r
   = Node a [r]
   | FragmentSpread Name
-  | InlineFragment Typename (NonEmpty r)
+  | InlineFragment Name (NonEmpty r)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 type SelectionNode a = Cofree (SelectionNodeF a) Pos
@@ -175,7 +176,7 @@ instance Show a => Show1 (SelectionNodeF a) where
 data FragmentF a
   = Fragment
     { fragPos ::Pos
-    , fragTypename :: Typename
+    , fragTypename :: Name
     , fragSelection :: NonEmpty a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 

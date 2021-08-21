@@ -39,7 +39,7 @@ import qualified Data.Text as Text
 import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
 
-validateDocument :: Maybe Name -> Input -> RootNodes'RAW -> V (HashMap Name Fragment, DocumentF SelectionSet)
+validateDocument :: Maybe Name -> JSON.Object -> RootNodes'RAW -> V (HashMap Name Fragment, DocumentF SelectionSet)
 validateDocument opName input (frags, ops) = do
   Operation'RAW { .. } <- getOperation opName ops
   let
@@ -97,16 +97,16 @@ eraseFragments frags (pos :< FragmentSpread k) = do
         ST.put (Set.insert k visited)
         traverseAccum (eraseFragments frags) $ fragSelection frag
 
-validateSelectionSet :: Input -> HashMap Name Variable'RAW -> SelectionNode'RAW -> V SelectionSet
+validateSelectionSet :: JSON.Object -> HashMap Name Variable'RAW -> SelectionNode'RAW -> V SelectionSet
 validateSelectionSet input vars = hoistM $ bitraverse (validateField input' vars) pure
   where input' = Map.filter (/= JSON.Null) input
 
-validateField :: Input -> HashMap Name Variable'RAW -> Field'RAW -> V Field
+validateField :: JSON.Object -> HashMap Name Variable'RAW -> Field'RAW -> V Field
 validateField input vars field = do
   args <- traverse (eraseVars input vars) (fieldArgs field)
   pure $ Field (fieldType field) (fieldAlias field) (fieldName field) args
 
-eraseVars :: Input -> HashMap Name Variable'RAW -> Value'RAW -> V Value
+eraseVars :: JSON.Object -> HashMap Name Variable'RAW -> Value'RAW -> V Value
 eraseVars _ _    (pos :< NullVal)       = pure $ (pos, Nothing) :< NullVal
 eraseVars _ _    (pos :< StrVal val)    = pure $ (pos, Nothing) :< (StrVal val)
 eraseVars _ _    (pos :< IntVal val)    = pure $ (pos, Nothing) :< (IntVal val)

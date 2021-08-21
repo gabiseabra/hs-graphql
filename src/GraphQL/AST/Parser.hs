@@ -31,6 +31,7 @@ import Text.Megaparsec.Char (string, char)
 import Data.Bitraversable (bisequence)
 import Data.Maybe (isJust, fromMaybe)
 import Data.Either (partitionEithers)
+import qualified Data.Vector as Vec
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
@@ -61,15 +62,15 @@ parseDefValue = optional (L.symbol "=" *> parseVal)
 
 parseVal :: Parser Value'RAW
 parseVal = label "Value" $ choice
-  [ NullVal   <$  L.symbol "null"
-  , Var       <$> L.varName
-  , StrVal    <$> L.stringVal
-  , IntVal    <$> try L.intVal
-  , DoubleVal <$> L.doubleVal
-  , BoolVal   <$> L.boolVal
-  , EnumVal   <$> L.enumVal
-  , ListVal   <$> L.brackets (many parseVal)
-  , ObjectVal <$> L.args L.braces L.name parseVal
+  [ NullVal                <$  L.symbol "null"
+  , Var                    <$> L.varName
+  , StrVal                 <$> L.stringVal
+  , IntVal                 <$> try L.intVal
+  , DoubleVal              <$> L.doubleVal
+  , BoolVal                <$> L.boolVal
+  , EnumVal                <$> L.enumVal
+  , ListVal . Vec.fromList <$> L.brackets (many parseVal)
+  , ObjectVal              <$> L.args L.braces L.name parseVal
   ] <@> (:<)
 
 parseVars :: Parser (HashMap Name Variable'RAW)
@@ -84,13 +85,13 @@ parseInput = label "Input" $ L.args L.parens L.name parseVal
 parseAlias :: Parser (Maybe Name)
 parseAlias = optional $ try (L.name <* L.symbol ":")
 
-parseField :: Maybe Typename -> Parser Field'RAW
+parseField :: Maybe Name -> Parser Field'RAW
 parseField ty = label "Field" $
   Field ty <$> parseAlias
            <*> L.name
            <*> L.optional_ parseInput
 
-parseSelectionNode :: Maybe Typename -> Parser SelectionNode'RAW
+parseSelectionNode :: Maybe Name -> Parser SelectionNode'RAW
 parseSelectionNode ty = label "SelectionNode" $ choice
     [ try inlineFragment
     , fragmentSpread
@@ -114,10 +115,10 @@ parseSelectionNode ty = label "SelectionNode" $ choice
       name <- L.name
       pure (pos :< FragmentSpread name)
 
-parseSelectionSet :: Maybe Typename -> Parser (NonEmpty SelectionNode'RAW)
+parseSelectionSet :: Maybe Name -> Parser (NonEmpty SelectionNode'RAW)
 parseSelectionSet ty = label "SelectionSet" $ L.braces $ some $ parseSelectionNode ty
 
-parseSelectionSet_ :: Maybe Typename -> Parser [SelectionNode'RAW]
+parseSelectionSet_ :: Maybe Name -> Parser [SelectionNode'RAW]
 parseSelectionSet_ ty = maybe [] NE.toList <$> optional (parseSelectionSet ty)
 
 parseFragment :: Parser (Text, Fragment'RAW)
