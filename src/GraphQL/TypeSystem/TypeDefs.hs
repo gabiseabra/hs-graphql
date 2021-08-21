@@ -25,6 +25,7 @@ import GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 
 import Control.Applicative (Alternative(..))
 import qualified Data.Aeson as JSON
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Row (Row, Rec, Var)
@@ -122,19 +123,24 @@ objectDef :: forall a m
   => Row.FreeForall (Rec.NativeRow a)
   => Typename
   -> TypeDef (OBJECT @m) a
-objectDef
-  = mkObjectDef @(GraphQLOutputType m)
-  $ Some . FieldDef Nothing . const @_ @() . fmap pure
+objectDef ty
+  = ObjectType ty Nothing
+  $ ObjectDef
+  $ mkFieldMap @(GraphQLOutputType m)
+  $ Some . FieldDef Nothing . const @_ @() . Compose . fmap pure
 
 resolverDef :: forall a m
-  .  Applicative m
-  => Rec.FromNative a
+  .  Rec.FromNative a
   => Row.AllUniqueLabels (Rec.NativeRow a)
   => Row.Forall (Rec.NativeRow a) (GraphQLResolver m)
   => Row.FreeForall (Rec.NativeRow a)
   => Typename
   -> TypeDef (OBJECT @m) a
-resolverDef = mkObjectDef @(GraphQLResolver m) $ Some . resolverFieldDef
+resolverDef ty
+  = ObjectType ty Nothing
+  $ ObjectDef
+  $ mkFieldMap @(GraphQLResolver m)
+  $ Some . resolverFieldDef
 
 canonicalDef :: forall sym m a proxy
   .  GetFields sym m a
@@ -149,26 +155,29 @@ canonicalDef ty _
 
 class GraphQLResolver m a where
   type ResolverOutput a :: *
-  resolverFieldDef :: (ctx -> a) -> FieldDef m ctx (ResolverOutput a)
+  resolverFieldDef :: (ctx -> a) -> FieldDef (ResolverT ctx) m (ResolverOutput a)
 
 instance
   ( GraphQLInput i
   , GraphQLOutputType m a
-  , Applicative m
   ) => GraphQLResolver m (i -> m a) where
   type ResolverOutput (i -> m a) = a
-  resolverFieldDef = FieldDef Nothing . flip
+  resolverFieldDef = FieldDef Nothing . (Compose .) . flip
 
 type GraphQLField :: (* -> *) -> * -> Symbol -> Constraint
 class
-  ( Applicative m
-  , GraphQLOutputType m (OutputOf a sym)
+  ( GraphQLOutputType m (OutputOf a sym)
+  , GraphQLInput (InputOf a sym)
   ) => GraphQLField m a sym where
   type OutputOf a sym :: *
-  fieldDef :: FieldDef m a (OutputOf a sym)
+  type InputOf a sym :: *
+  type InputOf a sym = ()
+  description :: Maybe Text
+  description = Nothing
+  resolver :: (InputOf a sym) -> a -> m (OutputOf a sym)
 
 type GetFields :: [Symbol] -> (* -> *) -> * -> Constraint
-class GetFields sym m a where getFields :: [(Text, FieldAp m a)]
+class GetFields sym m a where getFields :: [(Text, Resolver m a)]
 instance GetFields '[] m a where getFields = []
 instance
   ( GraphQLField m a sym
@@ -177,21 +186,20 @@ instance
   ) => GetFields (sym ': tail) m a where
     getFields
       = ( Text.pack $ symbolVal $ Proxy @sym
-        , Some $ fieldDef @m @a @sym
+        , Some $ FieldDef desc res
         ) : getFields @tail @m @a
+        where
+          desc = description @m @a @sym
+          res = Compose . resolver @m @a @sym
 
-mkObjectDef :: forall c a m
-  .  Applicative m
-  => Rec.FromNative a
+mkFieldMap :: forall c a m
+  .  Rec.FromNative a
   => Row.AllUniqueLabels (Rec.NativeRow a)
   => Row.Forall (Rec.NativeRow a) c
   => Row.FreeForall (Rec.NativeRow a)
-  => (forall b. c b => (a -> b) -> FieldAp m a)
-  -> Typename
-  -> TypeDef (OBJECT @m) a
-mkObjectDef fn ty
-  = ObjectType ty Nothing
-  $ ObjectDef
-  $ Map.fromList
+  => (forall b. c b => (a -> b) -> Resolver m a)
+  -> Map Text (Resolver m a)
+mkFieldMap fn
+  = Map.fromList
   $ eraseWithLabelsF @c @((->) a) @(Rec.NativeRow a) fn
   $ recordAccessors @a

@@ -51,15 +51,15 @@ data B
 
 instance GraphQLField IO B "test_b0" where
   type OutputOf B "test_b0" = Int
-  fieldDef = FieldDef Nothing $ \() -> pure . b0
+  resolver _ = pure . b0
 
 instance GraphQLField IO B "test_b1" where
   type OutputOf B "test_b1" = Maybe Text
-  fieldDef = FieldDef Nothing $ \() -> pure . fmap Text.pack . b1
+  resolver _ = pure . fmap Text.pack . b1
 
 instance GraphQLField IO B "test_b2" where
   type OutputOf B "test_b2" = [B]
-  fieldDef = FieldDef Nothing $ \() -> pure . replicate 2
+  resolver _ = pure . replicate 2
 
 instance GraphQLType B where
   type KIND B = OBJECT @IO

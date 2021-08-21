@@ -46,6 +46,7 @@ import Data.Row (Rec)
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
 import Data.Fix (Fix)
+import Data.Functor.Compose (Compose(..))
 
 type STree = Fix (TreeF Selection)
 
@@ -147,7 +148,7 @@ validate'Object t ty (ObjectDef fields) = fmap HashMap.fromList $ mapM (check . 
       Nothing -> Left $ "Field " <> name <> " does not exist in object of type " <> ty
       Just (Some (FieldDef _ f)) -> do
         i <- readInput ("input of " <> ty) input
-        pure (fromMaybe name alias, (tail, Exists $ Kleisli $ f i))
+        pure (fromMaybe name alias, (tail, Exists . Kleisli . getCompose $ f i))
 
 validate'Union :: forall m a
   .  Monad m

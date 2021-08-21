@@ -17,34 +17,7 @@
   , PolyKinds
 #-}
 
-module GraphQL.TypeSystem.Main
-  ( Typename
-  , Some(..)
-  , TypeKind(..)
-  , TypeIO(..)
-  , type (!>>)
-  , type (!!)
-  , GraphQLType(..)
-  , GraphQLInputType
-  , GraphQLOutputType
-  , GraphQLObjectType
-  , GraphQLInput(..)
-  , InputDef(..)
-  , TypeDef(..)
-  , typename
-  , ScalarDef(..)
-  , EnumDef(..)
-  , EnumValueDef(..)
-  , ObjectDef(..)
-  , FieldAp
-  , FieldDef(..)
-  , InputObjectDef(..)
-  , InputValueDef(..)
-  , UnionDef(..)
-  , Case(..)
-  , ListDef(..)
-  , NullableDef(..)
-  ) where
+module GraphQL.TypeSystem.Main where
 
 import GraphQL.Internal
 
@@ -60,6 +33,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Proxy (Proxy)
 import Data.Typeable (Typeable)
+import Data.Functor.Compose (Compose)
 
 type Typename = Text
 
@@ -171,20 +145,21 @@ data EnumValueDef
 type ObjectDef :: (* -> *) -> * -> *
 data ObjectDef m a
   = ObjectDef
-    { objectResolver :: Map Text (FieldAp m a)
+    { objectFields :: Map Text (Resolver m a)
     }
 
-type FieldAp m a = Some (FieldDef m a)
-
-data FieldDef m ctx a where
+data FieldDef t m a where
   FieldDef ::
-    ( Applicative m
-    , GraphQLInput i
+    ( GraphQLInput i
     , GraphQLOutputType m a
     ) =>
     { fieldDescription :: Maybe Text
-    , fieldResolver :: (i -> ctx -> m a)
-    } -> FieldDef m ctx a
+    , fieldResolver :: (i -> t m a)
+    } -> FieldDef t m a
+
+type ResolverT a = Compose ((->) a)
+type Resolver m a = Some (FieldDef (ResolverT a) m)
+
 
 type InputObjectDef :: * -> *
 data InputObjectDef a where
