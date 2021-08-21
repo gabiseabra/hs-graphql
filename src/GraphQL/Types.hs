@@ -31,18 +31,13 @@ import qualified Data.Vector as Vec
 import Data.Void (Void)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Typeable (Typeable)
 
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
 
 type Undefined :: OperationType -> (* -> *) -> * -> *
 data Undefined op m r = Undefined
 
-instance
-  ( Typeable op
-  , Typeable m
-  , Typeable r
-  ) => GraphQLType (Undefined op m r) where
+instance GraphQLType (Undefined op m r) where
   type KIND (Undefined op m r) = ROOT @op @m @r
   typeDef = RootType undefined UndefinedDef
 
@@ -111,7 +106,6 @@ instance
   ( StringOrListK [a] ~ sym
   , KnownSymbol sym
   , List_GraphQLType sym [a]
-  , Typeable [a]
   ) => GraphQLType [a] where
   type KIND [a] = LIST_KIND (StringOrListK [a]) [a]
   typeDef = list_typeDef @sym @[a]

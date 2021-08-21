@@ -24,16 +24,15 @@ import qualified Data.Aeson as JSON
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Proxy (Proxy(..))
-import Data.Typeable (Typeable)
 
 data A m
   = A
     { a0 :: () -> m Int
     , a1 :: () -> m (Maybe String)
     , a2 :: () -> m [A m]
-    } deriving (Generic, Typeable)
+    } deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (A m) where
+instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 
@@ -47,7 +46,7 @@ data B
   = B
     { b0 :: Int
     , b1 :: Maybe String
-    } deriving (Typeable)
+    }
 
 instance GraphQLField IO B "test_b0" where
   type OutputOf B "test_b0" = Int
@@ -68,7 +67,7 @@ instance GraphQLType B where
 b = B 420 (Just "eyy") :: B
 
 
-data C = C { c0 :: Int } deriving (Generic, Typeable)
+data C = C { c0 :: Int } deriving (Generic)
 
 instance GraphQLType C where
   type KIND C = OBJECT @IO

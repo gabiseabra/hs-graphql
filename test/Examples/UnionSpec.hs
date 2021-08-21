@@ -21,26 +21,25 @@ import Control.Monad ((<=<))
 import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
-import Data.Typeable (Typeable)
 
 data A m = A { a0 :: () -> m Int } deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (A m) where
+instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 
-data B m = B { b0 :: () -> m Int } deriving (Generic, Typeable)
+data B m = B { b0 :: () -> m Int } deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (B m) where
+instance (Applicative m) => GraphQLType (B m) where
   type KIND (B m) = OBJECT @m
   typeDef = resolverDef "B"
 
 data AB m
   = AB_A (A m)
   | AB_B (B m)
-  deriving (Generic, Typeable)
+  deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (AB m) where
+instance (Applicative m) => GraphQLType (AB m) where
   type KIND (AB m) = UNION @m
   typeDef = unionDef "AB"
 

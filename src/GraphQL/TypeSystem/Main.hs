@@ -33,7 +33,6 @@ import qualified Data.Row.Records as Rec
 import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Proxy (Proxy)
-import Data.Typeable (Typeable)
 import Data.Functor.Compose (Compose)
 import Data.Profunctor.Cayley (Cayley)
 
@@ -56,7 +55,6 @@ data TypeKind where
   LIST         :: TypeKind                                    -> TypeKind
   NULLABLE     :: TypeKind                                    -> TypeKind
   ROOT         :: forall (op :: OperationType) (m :: * -> *) r . TypeKind
-  deriving (Typeable)
 
 data TypeIO = IN | OUT
 
@@ -82,7 +80,7 @@ type family k || m where
 
 type k !! m = k || m ~ m
 
-class Typeable a => GraphQLType a where
+class GraphQLType a where
   type KIND a :: TypeKind
   typeDef :: TypeDef (KIND a) a
 
