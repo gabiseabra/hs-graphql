@@ -55,5 +55,5 @@ exec = go . resolve
 
 -- | Just validates a selection
 eval :: forall a. GraphQLOutputType IO a => [STree] -> V ()
-eval = second (const ()) . resolve @a @IO
+eval = second (const ()) . resolve @IO @a
 

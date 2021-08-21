@@ -16,6 +16,7 @@
 
 module GraphQL.IO.Output
   ( resolve
+  , resolve'
   , STree
   ) where
 
@@ -80,19 +81,16 @@ data Resolution t m a where
       -> Resolution t m a
       -> Resolution (WRAPPER t) m (f a)
 
-resolve :: forall a m
-  .  Monad m
-  => GraphQLOutputType m a
-  => [STree]
-  -> V (a -> m JSON.Value)
-resolve = fun
-  where
-    go :: forall a. ([STree], Step m a) -> V (a -> m JSON.Value)
-    go (t, Exists f) = pure . (\g -> runKleisli f >=> g) =<< fun t
-    fun :: forall a. GraphQLOutputType m a => [STree] -> V (a -> m JSON.Value)
-    fun t = let def = typeDef @a in sequenceResolver go =<< validate t def
+step :: forall m a . Monad m => ([STree], Step m a) -> V (a -> m JSON.Value)
+step (t, Exists f) = pure . (\g -> runKleisli f >=> g) =<< resolve t
 
-sequenceResolver :: forall a m f k
+resolve' :: forall m k a . (Monad m, k !! m) => [STree] -> TypeDef k a -> V (a -> m JSON.Value)
+resolve' t = sequenceResolver step <=< validate t
+
+resolve :: forall m a . (Monad m, GraphQLOutputType m a) => [STree] -> V (a -> m JSON.Value)
+resolve t = resolve' t $ typeDef @a
+
+sequenceResolver :: forall m k a
   .  Monad m
   => (forall a. ([STree], Step m a) -> V (a -> m JSON.Value))
   -> Resolution k m a
