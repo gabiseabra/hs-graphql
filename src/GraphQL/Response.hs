@@ -1,12 +1,15 @@
 {-# LANGUAGE
     OverloadedStrings
+  , DeriveGeneric
+  , DeriveAnyClass
 #-}
 
 module GraphQL.Response where
 
+import GHC.Generics (Generic)
+
 import qualified Data.Aeson as JSON
 import Data.Aeson (object, (.=))
-import GraphQL.AST.Document (Name, Pos)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.List.NonEmpty (NonEmpty(..))
@@ -20,6 +23,9 @@ data Response
 
 instance JSON.ToJSON Response where
   toJSON (Response a e) = object ["data" .= a, "errors" .= e]
+
+data Pos = Pos { line :: Int, column :: Int }
+  deriving (Eq, Show, Ord, Generic, JSON.ToJSON)
 
 type Path = [Text]
 

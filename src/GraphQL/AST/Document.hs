@@ -5,16 +5,12 @@
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
-  , DeriveGeneric
-  , DeriveAnyClass
 #-}
 
 module GraphQL.AST.Document
   ( Typename
   , Name
   , Input
-  , Pos(..)
-  , mkPos
   , OperationType(..)
   , ValueF(..)
   , TypeDefinition(..)
@@ -41,7 +37,8 @@ module GraphQL.AST.Document
   , Document
   ) where
 
-import GHC.Generics (Generic)
+import GraphQL.TypeSystem.Main (OperationType(..))
+import GraphQL.Response (Pos)
 
 import Control.Comonad.Cofree (Cofree)
 import qualified Data.Aeson as JSON
@@ -56,25 +53,12 @@ import Data.HashMap.Strict (HashMap)
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Foldable (Base, Recursive(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
-import qualified Text.Megaparsec.Pos as P
 
 type Typename = Text
 
 type Name = Text
 
 type Input = JSON.Object
-
-data Pos = Pos { line :: Int, column :: Int }
-  deriving (Eq, Show, Ord, Generic, JSON.ToJSON)
-
-mkPos :: P.SourcePos -> Pos
-mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
-
-data OperationType
-  = QUERY
-  | MUTATION
-  | SUBSCRIPTION
-  deriving (Eq, Show)
 
 data ValueF a r
   = NullVal

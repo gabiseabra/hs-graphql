@@ -14,7 +14,7 @@ module GraphQL.AST.Validation
 
 import GraphQL.AST.Document
 import GraphQL.AST.Lexer (Parser)
-import GraphQL.Response (V)
+import GraphQL.Response (V, Pos(..))
 import qualified GraphQL.Response as E
 
 import Control.Comonad.Cofree (Cofree(..), unfoldM)

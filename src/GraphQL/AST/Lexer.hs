@@ -15,6 +15,7 @@ module GraphQL.AST.Lexer
   , foldE
   , manyE
   , optional_
+  , mkPos
   , getPos
   , withPos
   , (<@>)
@@ -34,8 +35,7 @@ module GraphQL.AST.Lexer
   )
   where
 
-import GraphQL.Response (GraphQLError(..))
-import GraphQL.AST.Document (Pos(..), Pos(..), mkPos)
+import GraphQL.Response (Pos(..), GraphQLError(..))
 
 import Control.Applicative ((<|>), empty)
 import Control.Monad (void)
@@ -65,6 +65,7 @@ import Text.Megaparsec
   )
 import Text.Megaparsec.Char (string, char)
 import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Pos as P
 import Data.Char (chr, digitToInt)
 import Data.Foldable (foldl', foldr)
 import Data.Scientific (toRealFloat)
@@ -136,6 +137,9 @@ optional_ = fmap (fromMaybe mempty) . optional
 
 between_ :: Parser sep -> Parser a -> Parser a
 between_ a = between a a
+
+mkPos :: P.SourcePos -> Pos
+mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
 
 getPos :: Parser Pos
 getPos = mkPos <$> getSourcePos

@@ -39,6 +39,12 @@ type Typename = Text
 
 data Some f where Some :: f a -> Some f
 
+data OperationType
+  = QUERY
+  | MUTATION
+  | SUBSCRIPTION
+  deriving (Eq, Show)
+
 data TypeKind where
   SCALAR       ::                       TypeKind
   ENUM         ::                       TypeKind

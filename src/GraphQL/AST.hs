@@ -27,6 +27,7 @@ module GraphQL.AST
 import GraphQL.AST.Document
 import GraphQL.AST.Validation
 import GraphQL.AST.Parser
+import GraphQL.AST.Lexer (mkPos)
 import GraphQL.Response
 
 import Control.Monad ((<=<))
