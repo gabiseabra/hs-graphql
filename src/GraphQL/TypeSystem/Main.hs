@@ -56,6 +56,7 @@ data TypeKind where
   LIST         :: TypeKind                                    -> TypeKind
   NULLABLE     :: TypeKind                                    -> TypeKind
   ROOT         :: forall (op :: OperationType) (m :: * -> *) r . TypeKind
+  deriving (Typeable)
 
 data TypeIO = IN | OUT
 
@@ -223,3 +224,4 @@ data RootDef op m a r where
   QueryDef        :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef QUERY        m a r
   MutationDef     :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef MUTATION     m a r
   SubscriptionDef ::                      Map Text (Producer r m a) -> RootDef SUBSCRIPTION m a r
+  UndefinedDef    ::                                                   RootDef op           m a r
