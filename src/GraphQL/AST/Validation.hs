@@ -5,22 +5,19 @@
   , RecordWildCards
 #-}
 
-module GraphQL.AST.Validation
-  ( validateVarP
-  , validateRootNodesP
-  , validateDocument
-  , collectFields
-  ) where
+module GraphQL.AST.Validation where
 
 import GraphQL.AST.Document
 import GraphQL.AST.Lexer (Parser)
 import GraphQL.Response (V, Pos(..))
 import qualified GraphQL.Response as E
+import GraphQL.TypeSystem.Main (OperationType(..))
 
-import Control.Comonad.Cofree (Cofree(..), unfoldM)
+import Control.Comonad.Cofree (Cofree(..), ComonadCofree(..), unfoldM)
 import Control.Monad (join, (<=<))
 import Control.Monad.Trans (lift)
 import Control.Monad.State.Lazy (StateT(..))
+import Control.Arrow ((>>>))
 import qualified Control.Monad.State.Lazy as ST
 import qualified Data.Aeson as JSON
 import Data.Function (on)
@@ -38,7 +35,10 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
+import Data.Monoid (All(..))
+import Data.Functor.Foldable (Recursive(..), Base)
 
+{-
 validateDocument :: Maybe Name -> JSON.Object -> RootNodes'RAW -> V (HashMap Name Fragment, DocumentF SelectionSet)
 validateDocument opName input (frags, ops) = do
   Operation'RAW { .. } <- getOperation opName ops
@@ -97,9 +97,17 @@ eraseFragments frags (pos :< FragmentSpread k) = do
         ST.put (Set.insert k visited)
         traverseAccum (eraseFragments frags) $ fragSelection frag
 
-validateSelectionSet :: JSON.Object -> HashMap Name Variable'RAW -> SelectionNode'RAW -> V SelectionSet
-validateSelectionSet input vars = hoistM $ bitraverse (validateField input' vars) pure
-  where input' = Map.filter (/= JSON.Null) input
+validateSelectionSet :: HashMap Name (Variable JSON.Value) -> SelectionNode'RAW -> V SelectionSet
+validateSelectionSet vars = hoistM $ bitraverse (validateField vars) pure
+
+applyInput :: HashMap k v -> HashMap k (Variable (Maybe v)) -> V (HashMap k (Variable v))
+applyInput = Map.filter (/= JSON.Null) >>> \input -> Map.traverseWithKey (go . (`Map.lookup` input))
+  where
+    go (Just v) var = pure $ var { varValue = v }
+    go Nothing var
+      | Just v <- varValue var = pure $ var { varValue = v }
+      | isNullable var = pure $ var { varValue = JSON.Null }
+      | otherwise = validationError [varPos var] $ "Required variable $" <> k <> " is missing from input"
 
 validateField :: JSON.Object -> HashMap Name Variable'RAW -> Field'RAW -> V Field
 validateField input vars field = do
@@ -122,13 +130,7 @@ eraseVars i vars (pos :< Var k)         = case (Map.lookup k vars, Map.lookup k 
     fmap (att (pos, Just $ _varTypeDef var)) . eraseVars i vars =<< getDefaultValue k var
   (Just var, Just val) ->
     pure $ (pos, Just $ _varTypeDef var) :< Var val
-
-getDefaultValue :: Name -> Variable'RAW -> V Value'RAW
-getDefaultValue k var = maybe null pure $ _varDefValue var
-  where
-    null = if isNullable (_varTypeDef var)
-      then pure $ _varPos var :< NullVal
-      else E.validationError [_varPos var] $ "Required variable $" <> k <> " is missing from input"
+-}
 
 isNullable :: TypeDefinition -> Bool
 isNullable (NonNullType _) = False
@@ -163,20 +165,23 @@ validateFragmentsP frags =
     locs  = fmap (fragPos . snd) dupes
     names = fmap fst dupes
 
-validateVarP :: Name -> Variable'RAW -> Parser Variable'RAW
-validateVarP k var = var <$ maybe (pure ()) fun (_varDefValue var)
-  where fun = validateVarP' k (_varTypeDef var)
+typeMatches :: TypeDefinition -> ConstValueF ConstValue -> Bool
+typeMatches (ListType    t) (ListVal as) = getAll $ foldMap (All . typeMatches t . unwrap) as
+typeMatches (ListType    t) _            = False
+typeMatches (NonNullType t) NullVal      = False
+typeMatches (NonNullType t) v            = typeMatches t v
+typeMatches _               v            = True
 
-validateVarP' :: Name -> TypeDefinition -> Value'RAW -> Parser ()
-validateVarP' k (ListType t) (_ :< ListVal as) = foldMap (validateVarP' k t) as
-validateVarP' k (ListType t) (p :< _) = parseErrorP [p] $ "Non list value in list variable $" <> k
-validateVarP' k (NonNullType t) (p :< NullVal) = parseErrorP [p] $ "Null default value in required variable $" <> k
-validateVarP' k (NonNullType t) v = validateVarP' k t v
-validateVarP' k _ v@(p :< Var k') =
-  if k /= k'
-    then pure ()
-    else parseErrorP [p] $ "Self reference in default value of $" <> k
-validateVarP' _ _ v = pure ()
+validateVarP :: Variable (Maybe ConstValue) -> Parser (Variable (Maybe JSON.Value))
+validateVarP var@(Variable _ _   Nothing          ) = pure $ var { varValue = Nothing }
+validateVarP var@(Variable _ def (Just (pos:<val))) =
+  if typeMatches def val
+    then pure $ var { varValue = Just $ constValToJSON val }
+    else parseErrorP [pos]
+          $ "Expected "
+          <> Text.pack (show def)
+          <> ", found "
+          <> Text.pack (showConstVal val)
 
 parseErrorP :: [Pos] -> Text -> Parser a
 parseErrorP pos msg = customFailure $ E.ParseError pos msg

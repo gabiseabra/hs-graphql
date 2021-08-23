@@ -11,6 +11,7 @@ import GraphQL.AST.Document
 import GraphQL.AST.Validation
 import GraphQL.AST.Lexer (Parser, (<@>))
 import qualified GraphQL.AST.Lexer as L
+import GraphQL.TypeSystem.Main (OperationType(..))
 
 import Control.Arrow ((+++))
 import Control.Applicative ((<|>))
@@ -28,6 +29,7 @@ import Text.Megaparsec
   , customFailure
   )
 import Text.Megaparsec.Char (string, char)
+import qualified Data.Aeson as JSON
 import Data.Bitraversable (bisequence)
 import Data.Maybe (isJust, fromMaybe)
 import Data.Either (partitionEithers)
@@ -38,6 +40,7 @@ import Data.Text (Text)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
+import Data.Function (fix)
 
 parseOperationType :: Parser OperationType
 parseOperationType = label "OperationType" $ option QUERY $ try $ choice
@@ -57,27 +60,37 @@ parseTypeDef = label "VariableDefinition" $ L.lexeme $ do
     then pure $ NonNullType var
     else pure var
 
-parseDefValue :: Parser (Maybe Value'RAW)
-parseDefValue = optional (L.symbol "=" *> parseVal)
+parseDefValue :: Parser (Maybe ConstValue)
+parseDefValue = optional (L.symbol "=" *> parseConstVal)
 
-parseVal :: Parser Value'RAW
-parseVal = label "Value" $ choice
+parseConstValF :: Parser r -> Parser (ConstValueF r)
+parseConstValF p = label "ConstValue" $ choice
   [ NullVal                <$  L.symbol "null"
-  , Var                    <$> L.varName
   , StrVal                 <$> L.stringVal
   , IntVal                 <$> try L.intVal
   , DoubleVal              <$> L.doubleVal
   , BoolVal                <$> L.boolVal
   , EnumVal                <$> L.enumVal
-  , ListVal . Vec.fromList <$> L.brackets (many parseVal)
-  , ObjectVal              <$> L.args L.braces L.name parseVal
+  , ListVal . Vec.fromList <$> L.brackets (many p)
+  , ObjectVal              <$> L.args L.braces L.name p
+  ]
+
+parseConstVal :: Parser (ConstValue)
+parseConstVal = fix ((<@> (:<)) . parseConstValF)
+
+parseVal :: Parser (Value Name)
+parseVal = label "Value" $ choice
+  [ Var <$> L.varName
+  , Val <$> parseConstValF parseVal
   ] <@> (:<)
 
-parseVars :: Parser (HashMap Name Variable'RAW)
-parseVars = label "Variables" $ L.argsE validateVarP L.parens L.varName $
-  Variable'RAW <$> L.getPos
-               <*> parseTypeDef
-               <*> parseDefValue
+parseVars :: Parser (HashMap Name (Variable (Maybe JSON.Value)))
+parseVars = label "Variables"
+  $ (>>= traverse validateVarP)
+  $ L.args L.parens L.varName
+  $ Variable <$> L.getPos
+             <*> parseTypeDef
+             <*> parseDefValue
 
 parseInput :: Parser (HashMap Name Value'RAW)
 parseInput = label "Input" $ L.args L.parens L.name parseVal
