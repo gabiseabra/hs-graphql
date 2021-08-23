@@ -38,7 +38,7 @@ import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
 import Data.Monoid (All(..))
 import Data.Functor.Foldable (Recursive(..), Base)
-import Data.Functor.Identity (Identity)
+import Data.Functor.Identity (Identity(..))
 
 {-
 validateDocument :: Maybe Name -> JSON.Object -> RootNodes'RAW -> V (HashMap Name Fragment, DocumentF SelectionSet)
@@ -48,21 +48,19 @@ validateDocument opName input (frags, ops) = do
     fn = validateSelectionSet input $ _opVariables
   (,) <$> traverse (traverse fn) frags
       <*> (mkDocument _opPos _opType _opName =<< traverse fn _opSelection)
+-}
 
-mkDocument :: Pos -> OperationType -> Maybe Name -> NonEmpty a -> V (DocumentF a)
-mkDocument _   QUERY        name sel       = pure $ Query name sel
-mkDocument _   MUTATION     name sel       = pure $ Mutation name sel
-mkDocument _   SUBSCRIPTION name (sel:|[]) = pure $ Subscription name sel
-mkDocument pos _ _ _ = E.validationError [pos] "Subscription operation must have only one root field"
+getOperation :: Maybe Name -> Document a -> V (Operation a)
+getOperation Nothing     (Document _ (LeftF  (Identity op))) = pure op
+getOperation Nothing     (Document _ (RightF _            )) = E.validationError [] "Operation name is required for documents with multiple operations"
+getOperation (Just name) (Document _ (LeftF  (Identity op)))
+  | opName op == (Just name) = pure op
+  | otherwise = E.validationError [] $ "Operation " <> name <> " is not defined"
+getOperation (Just name) (Document _ (RightF ops)) = case HashMap.lookup name ops of
+  Nothing -> E.validationError [] $ "Operation " <> name <> " is not defined"
+  Just op -> pure op
 
-getOperation :: Maybe Name -> NonEmpty Operation'RAW -> V Operation'RAW
-getOperation Nothing (op:|[]) = pure op
-getOperation Nothing _ = E.validationError [] "No operation name provided for document with multiple operations"
-getOperation (Just opName) ops =
-  case List.find ((== Just opName) . _opName) (NE.toList ops) of
-    Nothing -> E.validationError [] $ "Operation " <> opName <> " is not defined"
-    Just op -> pure op
-
+{-
 collectFields
   :: HashMap Name Fragment
   -> DocumentF SelectionSet
@@ -115,24 +113,21 @@ validateField :: JSON.Object -> HashMap Name Variable'RAW -> Field'RAW -> V Fiel
 validateField input vars field = do
   args <- traverse (eraseVars input vars) (fieldArgs field)
   pure $ Field (fieldType field) (fieldAlias field) (fieldName field) args
-
-eraseVars :: JSON.Object -> HashMap Name Variable'RAW -> Value'RAW -> V Value
-eraseVars _ _    (pos :< NullVal)       = pure $ (pos, Nothing) :< NullVal
-eraseVars _ _    (pos :< StrVal val)    = pure $ (pos, Nothing) :< (StrVal val)
-eraseVars _ _    (pos :< IntVal val)    = pure $ (pos, Nothing) :< (IntVal val)
-eraseVars _ _    (pos :< DoubleVal val) = pure $ (pos, Nothing) :< (DoubleVal val)
-eraseVars _ _    (pos :< BoolVal val)   = pure $ (pos, Nothing) :< (BoolVal val)
-eraseVars _ _    (pos :< EnumVal val)   = pure $ (pos, Nothing) :< (EnumVal val)
-eraseVars i vars (pos :< ListVal val)   = ((pos, Nothing) :<) . ListVal <$> mapM (eraseVars i vars) val
-eraseVars i vars (pos :< ObjectVal val) = ((pos, Nothing) :<) . ObjectVal <$> mapM (eraseVars i vars) val
-eraseVars i vars (pos :< Var k)         = case (Map.lookup k vars, Map.lookup k i) of
-  (Nothing, _) ->
-    E.validationError [pos] $ "Variable $" <> k <> " is not defined"
-  (Just var, Nothing) ->
-    fmap (att (pos, Just $ _varTypeDef var)) . eraseVars i vars =<< getDefaultValue k var
-  (Just var, Just val) ->
-    pure $ (pos, Just $ _varTypeDef var) :< Var val
 -}
+
+eraseVars :: Variables a -> Value Name -> V (Value (Name, Variable a))
+eraseVars vars (pos:<Val v) = (pos:<) . Val <$> traverse (eraseVars vars) v
+eraseVars vars (pos:<Var k) = case HashMap.lookup k vars of
+  Nothing  -> E.validationError [pos] $ "Variable $" <> k <> " is not defined"
+  Just var -> pure $ (pos:<Var (k, var))
+
+resolveVariables :: JSON.Object -> Variables (Maybe JSON.Value) -> V (Variables JSON.Value)
+resolveVariables = HashMap.filter (/= JSON.Null) >>> \input -> HashMap.traverseWithKey $ \k var ->
+  case HashMap.lookup k input of
+    Just val -> pure $ var { varValue = val }
+    Nothing | Just val <- varValue var -> pure $ var { varValue = val }
+            | isNullable (varDefinition var) -> pure $ var { varValue = JSON.Null }
+            | otherwise -> E.validationError [varPos var] $ "Required variable $" <> k <> " is missing from input"
 
 validateDocumentP :: ([(Name, Fragment a)], [Operation a]) -> Parser (Document a)
 validateDocumentP (frags, ops) = Document <$> validateFragmentsP frags <*> validateOperationsP ops
