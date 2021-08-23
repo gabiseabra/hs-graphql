@@ -29,10 +29,9 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.List as List
 import Data.Functor.Identity (Identity(..))
-import Data.Functor.Foldable (Base, Recursive(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
 
-type Name = Text
+-- * Value nodes
 
 data ConstValueF r
   = NullVal
@@ -118,6 +117,19 @@ instance Show a => Show1 (ValueF a) where
   liftShowsPrec sp sl d (Var v) = (<>) $ "Var " <> show v
   liftShowsPrec sp sl d (Val v) = showsUnaryWith (liftShowsPrec sp sl) "Val " d v
 
+-- * Variable node
+
+data Variable a
+  = Variable
+    { varPos :: Pos
+    , varDefinition :: TypeDefinition
+    , varValue :: a
+    } deriving (Eq, Show)
+
+type Variables a = HashMap Name (Variable a)
+
+-- * Type definition node
+
 data TypeDefinition
   = ListType TypeDefinition
   | NonNullType TypeDefinition
@@ -129,7 +141,9 @@ instance Show TypeDefinition where
   show (NonNullType ty) = show ty <> "!"
   show (NamedType ty) = Text.unpack ty
 
-data FieldF a
+-- * Selection nodes
+
+data Field' a
   = Field
     { fieldType :: Maybe Name
     , fieldAlias :: Maybe Name
@@ -137,140 +151,135 @@ data FieldF a
     , fieldArgs :: HashMap Name a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Eq1 FieldF where
+type Field a = Field' (Value a)
+
+instance Eq1 Field' where
   liftEq f (Field ty alias name args) (Field ty' alias' name' args')
     =  ty == ty'
     && alias == alias'
     && name == name'
     && liftEq f args args'
 
-instance Show1 FieldF where
+instance Show1 Field' where
   liftShowsPrec sp sl d (Field ty alias name args)
     = showsUnaryWith
       (liftShowsPrec sp sl)
       ("Field " <> show ty <> " " <> show alias <> " " <> show name)
       d args
 
-data SelectionNodeF a r
+data SelectionF a r
   = Node a [r]
   | FragmentSpread Name
   | InlineFragment Name (NonEmpty r)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type SelectionNode a = Cofree (SelectionNodeF a) Pos
+type Selection a = Cofree (SelectionF a) Pos
 
-instance Bifunctor SelectionNodeF where
+instance Bifunctor SelectionF where
   bimap f g (Node a r)           = Node (f a) (fmap g r)
   bimap f g (FragmentSpread a)   = FragmentSpread a
   bimap f g (InlineFragment a r) = InlineFragment a (fmap g r)
 
-instance Bifoldable SelectionNodeF where
+instance Bifoldable SelectionF where
   bifoldMap f g (Node a r)           = f a `mappend` (foldMap g r)
   bifoldMap f g (FragmentSpread a)   = mempty
   bifoldMap f g (InlineFragment a r) = foldMap g r
 
-instance Bitraversable SelectionNodeF where
+instance Bitraversable SelectionF where
   bitraverse f g (Node a r)           = Node <$> f a <*> traverse g r
   bitraverse f g (FragmentSpread a)   = pure $ FragmentSpread a
   bitraverse f g (InlineFragment a r) = InlineFragment a <$> traverse g r
 
-instance Eq a => Eq1 (SelectionNodeF a) where
+instance Eq a => Eq1 (SelectionF a) where
   liftEq f (Node a l)           (Node b r)           = a == b && liftEq f l r
   liftEq f (FragmentSpread a)   (FragmentSpread b)   = a == b
   liftEq f (InlineFragment a l) (InlineFragment b r) = a == b && liftEq f l r
   liftEq _ _ _                           = False
 
-instance Show a => Show1 (SelectionNodeF a) where
+instance Show a => Show1 (SelectionF a) where
   liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
   liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
 
-data FragmentF a
+-- * Root nodes
+
+data Fragment a
   = Fragment
     { fragPos ::Pos
     , fragTypename :: Name
     , fragSelection :: NonEmpty a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Eq1 FragmentF where
+instance Eq1 Fragment where
   liftEq f (Fragment pos ty as) (Fragment pos' ty' bs)
     =  pos == pos'
     && ty == ty'
     && liftEq f as bs
 
-instance Show1 FragmentF where
+instance Show1 Fragment where
   liftShowsPrec sp sl d (Fragment pos ty as)
     = showsUnaryWith
       (liftShowsPrec sp sl)
       ("Fragment " <> show pos <> " " <> show ty)
       d as
 
-data DocumentF a
-  = Query        (Maybe Name) (NonEmpty a)
-  | Mutation     (Maybe Name) (NonEmpty a)
-  | Subscription (Maybe Name) a
+data Operation a
+  = Query        Pos (Maybe Name) (Variables (Maybe JSON.Value)) (NonEmpty a)
+  | Mutation     Pos (Maybe Name) (Variables (Maybe JSON.Value)) (NonEmpty a)
+  | Subscription Pos (Maybe Name) (Variables (Maybe JSON.Value)) a
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-opType :: DocumentF a -> OperationType
-opType (Query        _ _) = QUERY
-opType (Mutation     _ _) = MUTATION
-opType (Subscription _ _) = SUBSCRIPTION
+opType :: Operation a -> OperationType
+opType (Query        _ _ _ _) = QUERY
+opType (Mutation     _ _ _ _) = MUTATION
+opType (Subscription _ _ _ _) = SUBSCRIPTION
 
-opName :: DocumentF a -> Maybe Name
-opName (Query        name _) = name
-opName (Mutation     name _) = name
-opName (Subscription name _) = name
+opPos :: Operation a -> Pos
+opPos (Query        pos _ _ _) = pos
+opPos (Mutation     pos _ _ _) = pos
+opPos (Subscription pos _ _ _) = pos
 
-opSelection :: DocumentF a -> NonEmpty a
-opSelection (Query        _ as) = as
-opSelection (Mutation     _ as) = as
-opSelection (Subscription _ a ) = a:|[]
+opName :: Operation a -> Maybe Name
+opName (Query        _ name _ _) = name
+opName (Mutation     _ name _ _) = name
+opName (Subscription _ name _ _) = name
 
-instance Eq1 DocumentF where
-  liftEq f (Query        name as) (Query        name' bs) = name == name' && liftEq f as bs
-  liftEq f (Mutation     name as) (Mutation     name' bs) = name == name' && liftEq f as bs
-  liftEq f (Subscription name a ) (Subscription name' b ) = name == name' && liftEq f (Identity a) (Identity b)
+opVariables :: Operation a -> Variables (Maybe JSON.Value)
+opVariables (Query        _ _ vars _) = vars
+opVariables (Mutation     _ _ vars _) = vars
+opVariables (Subscription _ _ vars _) = vars
 
-instance Show1 DocumentF where
-  liftShowsPrec sp sl d (Query name as)
-    = showsUnaryWith (liftShowsPrec sp sl) ("Query " <> show name) d as
-  liftShowsPrec sp sl d (Mutation name as)
-    = showsUnaryWith (liftShowsPrec sp sl) ("Mutation " <> show name) d as
-  liftShowsPrec sp sl d (Subscription name a)
-    = showsUnaryWith sp ("Subscription" <> show name) d a
+opSelection :: Operation a -> NonEmpty a
+opSelection (Query        _ _ _ as) = as
+opSelection (Mutation     _ _ _ as) = as
+opSelection (Subscription _ _ _ a ) = a:|[]
 
-type Value'RAW = Value Name
+instance Eq1 Operation where
+  liftEq f (Query        pos name vars as) (Query        pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
+  liftEq f (Mutation     pos name vars as) (Mutation     pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
+  liftEq f (Subscription pos name vars a ) (Subscription pos' name' vars' b ) = pos == pos' && name == name' && vars == vars && liftEq f (Identity a) (Identity b)
 
-data Variable a
-  = Variable
-    { varPos :: Pos
-    , varDefinition :: TypeDefinition
-    , varValue :: a
-    } deriving (Eq, Show)
+instance Show1 Operation where
+  liftShowsPrec sp sl d (Query pos name vars as)
+    = showsUnaryWith (liftShowsPrec sp sl) ("Query " <>  show pos <> " " <> show name <> " " <> show vars) d as
+  liftShowsPrec sp sl d (Mutation pos name vars as)
+    = showsUnaryWith (liftShowsPrec sp sl) ("Mutation " <>  show pos <> " " <> show name <> " " <> show vars) d as
+  liftShowsPrec sp sl d (Subscription pos name vars a)
+    = showsUnaryWith sp ("Subscription " <> show pos <> " " <> show name <> " " <> show vars) d a
 
-type Field'RAW = FieldF Value'RAW
+-- * Document
 
-type SelectionNode'RAW = SelectionNode Field'RAW
+data Document a
+  = Document
+    { fragments :: HashMap Name (Fragment a)
+    , operations :: EitherF Identity (HashMap Name) (Operation a)
+    }
 
-type Fragment'RAW = FragmentF SelectionNode'RAW
+-- * Utils
 
-data Operation'RAW
-  = Operation'RAW
-    { _opPos :: Pos
-    , _opType :: OperationType
-    , _opName :: Maybe Name
-    , _opVariables :: HashMap Name (Variable (Maybe JSON.Value))
-    , _opSelection :: NonEmpty SelectionNode'RAW
-    } deriving (Eq, Show)
+data EitherF f g a
+  = LeftF (f a)
+  | RightF (g a)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type RootNodes'RAW = (HashMap Name Fragment'RAW, NonEmpty Operation'RAW)
-
-type Field = FieldF (Value (Name, Variable JSON.Value))
-
-type Fragment = FragmentF SelectionSet
-
-type FieldSet = Cofree (TreeF Field) Pos
-
-type SelectionSet = SelectionNode Field
-
-type Document = DocumentF FieldSet
+type Name = Text

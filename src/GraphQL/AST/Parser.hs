@@ -92,20 +92,20 @@ parseVars = label "Variables"
              <*> parseTypeDef
              <*> parseDefValue
 
-parseInput :: Parser (HashMap Name Value'RAW)
-parseInput = label "Input" $ L.args L.parens L.name parseVal
+parseArgs :: Parser (HashMap Name (Value Name))
+parseArgs = label "Arguments" $ L.args L.parens L.name parseVal
 
 parseAlias :: Parser (Maybe Name)
 parseAlias = optional $ try (L.name <* L.symbol ":")
 
-parseField :: Maybe Name -> Parser Field'RAW
+parseField :: Maybe Name -> Parser (Field Name)
 parseField ty = label "Field" $
   Field ty <$> parseAlias
            <*> L.name
-           <*> L.optional_ parseInput
+           <*> L.optional_ parseArgs
 
-parseSelectionNode :: Maybe Name -> Parser SelectionNode'RAW
-parseSelectionNode ty = label "SelectionNode" $ choice
+parseSelectionNode :: Maybe Name -> Parser (Selection (Field Name))
+parseSelectionNode ty = label "Selection" $ choice
     [ try inlineFragment
     , fragmentSpread
     , node
@@ -115,26 +115,29 @@ parseSelectionNode ty = label "SelectionNode" $ choice
       pos   <- L.getPos
       field <- parseField ty
       sel   <- parseSelectionSet_ Nothing
-      pure (pos :< Node field sel)
+      pure (pos:<Node field sel)
     inlineFragment = do
       () <$ L.symbol "..." <* L.symbol "on"
       pos <- L.getPos
       ty  <- L.name
       sel <- parseSelectionSet $ Just ty
-      pure (pos :< InlineFragment ty sel)
+      pure (pos:<InlineFragment ty sel)
     fragmentSpread = do
       () <$ L.symbol "..."
       pos  <- L.getPos
       name <- L.name
-      pure (pos :< FragmentSpread name)
+      pure (pos:<FragmentSpread name)
 
-parseSelectionSet :: Maybe Name -> Parser (NonEmpty SelectionNode'RAW)
+parseSelection :: Maybe Name -> Parser (Selection (Field Name))
+parseSelection ty = label "SelectionSet" $ L.braces $ parseSelectionNode ty
+
+parseSelectionSet :: Maybe Name -> Parser (NonEmpty (Selection (Field Name)))
 parseSelectionSet ty = label "SelectionSet" $ L.braces $ some $ parseSelectionNode ty
 
-parseSelectionSet_ :: Maybe Name -> Parser [SelectionNode'RAW]
+parseSelectionSet_ :: Maybe Name -> Parser [Selection (Field Name)]
 parseSelectionSet_ ty = maybe [] NE.toList <$> optional (parseSelectionSet ty)
 
-parseFragment :: Parser (Text, Fragment'RAW)
+parseFragment :: Parser (Text, Fragment (Selection (Field Name)))
 parseFragment = label "Fragment" $ do
   () <$ L.symbol "fragment"
   pos  <- L.getPos
@@ -143,18 +146,21 @@ parseFragment = label "Fragment" $ do
   sel  <- parseSelectionSet $ Just ty
   pure $ (name, Fragment pos ty sel)
 
-parseOperation :: Parser Operation'RAW
-parseOperation = label "Operation" $
-  Operation'RAW <$> L.getPos
-                <*> parseOperationType
-                <*> optional L.name
-                <*> try (L.optional_ parseVars)
-                <*> parseSelectionSet Nothing
+parseOperation :: Parser (Operation (Selection (Field Name)))
+parseOperation = label "Operation" $ do
+  pos  <- L.getPos
+  op   <- parseOperationType
+  name <- optional L.name
+  vars <- try (L.optional_ parseVars)
+  case op of
+    QUERY        -> Query pos name vars <$> parseSelectionSet Nothing
+    MUTATION     -> Mutation pos name vars <$> parseSelectionSet Nothing
+    SUBSCRIPTION -> Subscription pos name vars <$> parseSelection Nothing
 
-parseRootNodes :: Parser RootNodes'RAW
+parseRootNodes :: Parser (Document (Selection (Field Name)))
 parseRootNodes = label "Document" $ L.sc *> nodes <* L.sc <* eof
   where
-    nodes = validateRootNodesP =<< L.foldE p mempty
+    nodes = validateDocumentP =<< L.foldE p mempty
     p ab  = appendEither ab <$> eitherP parseFragment parseOperation
 
 appendEither :: ([a], [b]) -> Either a b -> ([a], [b])
