@@ -143,7 +143,7 @@ instance Show TypeDefinition where
 
 -- * Selection nodes
 
-data Field' a
+data FieldF a
   = Field
     { fieldType :: Maybe Name
     , fieldAlias :: Maybe Name
@@ -151,16 +151,16 @@ data Field' a
     , fieldArgs :: HashMap Name a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type Field a = Field' (Value a)
+type Field a = FieldF (Value a)
 
-instance Eq1 Field' where
+instance Eq1 FieldF where
   liftEq f (Field ty alias name args) (Field ty' alias' name' args')
     =  ty == ty'
     && alias == alias'
     && name == name'
     && liftEq f args args'
 
-instance Show1 Field' where
+instance Show1 FieldF where
   liftShowsPrec sp sl d (Field ty alias name args)
     = showsUnaryWith
       (liftShowsPrec sp sl)
@@ -206,21 +206,23 @@ instance Show a => Show1 (SelectionF a) where
 data Fragment a
   = Fragment
     { fragPos ::Pos
+    , fragName :: Name
     , fragTypename :: Name
     , fragSelection :: NonEmpty a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
 instance Eq1 Fragment where
-  liftEq f (Fragment pos ty as) (Fragment pos' ty' bs)
-    =  pos == pos'
+  liftEq f (Fragment name pos ty as) (Fragment name' pos' ty' bs)
+    =  name == name'
+    && pos == pos'
     && ty == ty'
     && liftEq f as bs
 
 instance Show1 Fragment where
-  liftShowsPrec sp sl d (Fragment pos ty as)
+  liftShowsPrec sp sl d (Fragment name pos ty as)
     = showsUnaryWith
       (liftShowsPrec sp sl)
-      ("Fragment " <> show pos <> " " <> show ty)
+      ("Fragment " <> show name <> " " <> show pos <> " " <> show ty)
       d as
 
 data Operation a

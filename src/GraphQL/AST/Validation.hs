@@ -18,7 +18,7 @@ import Control.Comonad.Cofree (Cofree(..), ComonadCofree(..), unfoldM)
 import Control.Monad (join, (<=<))
 import Control.Monad.Trans (lift)
 import Control.Monad.State.Lazy (StateT(..))
-import Control.Arrow ((>>>))
+import Control.Arrow ((>>>), (&&&))
 import qualified Control.Monad.State.Lazy as ST
 import qualified Data.Aeson as JSON
 import Data.Function (on)
@@ -129,7 +129,7 @@ resolveVariables = HashMap.filter (/= JSON.Null) >>> \input -> HashMap.traverseW
             | isNullable (varDefinition var) -> pure $ var { varValue = JSON.Null }
             | otherwise -> E.validationError [varPos var] $ "Required variable $" <> k <> " is missing from input"
 
-validateDocumentP :: ([(Name, Fragment a)], [Operation a]) -> Parser (Document a)
+validateDocumentP :: ([Fragment a], [Operation a]) -> Parser (Document a)
 validateDocumentP (frags, ops) = Document <$> validateFragmentsP frags <*> validateOperationsP ops
 
 -- Validates that each document either has only one operation or all named operations
@@ -143,8 +143,8 @@ validateOperationsP ops = RightF <$> (sequence . HashMap.fromListWithKey (liftJo
     onDupe k op0 op1 = validationErrorP [opPos op0, opPos op1] $ "Duplicated operation name " <> k
 
 -- Validates that fragment names don't clash
-validateFragmentsP :: [(Name, Fragment a)] -> Parser (HashMap Name (Fragment a))
-validateFragmentsP = sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) . fmap (second pure)
+validateFragmentsP :: [Fragment a] -> Parser (HashMap Name (Fragment a))
+validateFragmentsP = sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) . fmap (fragName &&& pure)
   where
     onDupe k f0 f1 = validationErrorP [fragPos f0, fragPos f1] $ "Duplicated fragment name " <> k
 

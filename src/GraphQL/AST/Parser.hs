@@ -75,7 +75,7 @@ parseConstValF p = label "ConstValue" $ choice
   , ObjectVal              <$> L.args L.braces L.name p
   ]
 
-parseConstVal :: Parser (ConstValue)
+parseConstVal :: Parser ConstValue
 parseConstVal = fix ((<@> (:<)) . parseConstValF)
 
 parseVal :: Parser (Value Name)
@@ -99,10 +99,10 @@ parseAlias :: Parser (Maybe Name)
 parseAlias = optional $ try (L.name <* L.symbol ":")
 
 parseField :: Maybe Name -> Parser (Field Name)
-parseField ty = label "Field" $
-  Field ty <$> parseAlias
-           <*> L.name
-           <*> L.optional_ parseArgs
+parseField ty = label "Field"
+  $ Field ty <$> parseAlias
+             <*> L.name
+             <*> L.optional_ parseArgs
 
 parseSelectionNode :: Maybe Name -> Parser (Selection (Field Name))
 parseSelectionNode ty = label "Selection" $ choice
@@ -137,14 +137,13 @@ parseSelectionSet ty = label "SelectionSet" $ L.braces $ some $ parseSelectionNo
 parseSelectionSet_ :: Maybe Name -> Parser [Selection (Field Name)]
 parseSelectionSet_ ty = maybe [] NE.toList <$> optional (parseSelectionSet ty)
 
-parseFragment :: Parser (Text, Fragment (Selection (Field Name)))
+parseFragment :: Parser (Fragment (Selection (Field Name)))
 parseFragment = label "Fragment" $ do
   () <$ L.symbol "fragment"
   pos  <- L.getPos
   name <- L.name
   ty   <- L.symbol "on" *> L.name
-  sel  <- parseSelectionSet $ Just ty
-  pure $ (name, Fragment pos ty sel)
+  Fragment pos name ty <$> parseSelectionSet (Just ty)
 
 parseOperation :: Parser (Operation (Selection (Field Name)))
 parseOperation = label "Operation" $ do
