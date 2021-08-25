@@ -6,12 +6,15 @@
   , DeriveFoldable
   , DeriveTraversable
   , DeriveAnyClass
+  , TypeOperators
 #-}
 
 module GraphQL.AST.Document where
 
 import GraphQL.TypeSystem.Main (OperationType(..))
 import GraphQL.Response (Pos)
+
+import GHC.Generics ((:+:))
 
 import Control.Comonad.Cofree (Cofree, ComonadCofree(..))
 import qualified Data.Aeson as JSON
@@ -256,6 +259,11 @@ opSelection (Query        _ _ _ as) = as
 opSelection (Mutation     _ _ _ as) = as
 opSelection (Subscription _ _ _ a ) = a:|[]
 
+setOpSelection :: Operation a -> NonEmpty a -> Operation a
+setOpSelection (Query        pos name vars _) as     = Query        pos name vars as
+setOpSelection (Mutation     pos name vars _) as     = Mutation     pos name vars as
+setOpSelection (Subscription pos name vars _) (a:|_) = Subscription pos name vars a
+
 instance Eq1 Operation where
   liftEq f (Query        pos name vars as) (Query        pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
   liftEq f (Mutation     pos name vars as) (Mutation     pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
@@ -274,14 +282,7 @@ instance Show1 Operation where
 data Document a
   = Document
     { fragments :: HashMap Name (Fragment a)
-    , operations :: EitherF Identity (HashMap Name) (Operation a)
+    , operations :: (Identity :+: HashMap Name) (Operation a)
     }
-
--- * Utils
-
-data EitherF f g a
-  = LeftF (f a)
-  | RightF (g a)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 type Name = Text

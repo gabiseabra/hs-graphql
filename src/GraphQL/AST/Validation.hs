@@ -3,6 +3,7 @@
   , TupleSections
   , RankNTypes
   , RecordWildCards
+  , TypeOperators
 #-}
 
 module GraphQL.AST.Validation where
@@ -12,6 +13,8 @@ import GraphQL.AST.Lexer (Parser)
 import GraphQL.Response (V, Pos(..))
 import qualified GraphQL.Response as E
 import GraphQL.TypeSystem.Main (OperationType(..))
+
+import GHC.Generics ((:+:)(..))
 
 import Control.Applicative (liftA2)
 import Control.Comonad.Cofree (Cofree(..), ComonadCofree(..), unfoldM)
@@ -51,12 +54,12 @@ validateDocument opName input (frags, ops) = do
 -}
 
 getOperation :: Maybe Name -> Document a -> V (Operation a)
-getOperation Nothing     (Document _ (LeftF  (Identity op))) = pure op
-getOperation Nothing     (Document _ (RightF _            )) = E.validationError [] "Operation name is required for documents with multiple operations"
-getOperation (Just name) (Document _ (LeftF  (Identity op)))
+getOperation Nothing     (Document _ (L1 (Identity op))) = pure op
+getOperation Nothing     (Document _ (R1 _            )) = E.validationError [] "Operation name is required for documents with multiple operations"
+getOperation (Just name) (Document _ (L1 (Identity op)))
   | opName op == (Just name) = pure op
   | otherwise = E.validationError [] $ "Operation " <> name <> " is not defined"
-getOperation (Just name) (Document _ (RightF ops)) = case HashMap.lookup name ops of
+getOperation (Just name) (Document _ (R1 ops)) = case HashMap.lookup name ops of
   Nothing -> E.validationError [] $ "Operation " <> name <> " is not defined"
   Just op -> pure op
 
@@ -133,10 +136,10 @@ validateDocumentP :: ([Fragment a], [Operation a]) -> Parser (Document a)
 validateDocumentP (frags, ops) = Document <$> validateFragmentsP frags <*> validateOperationsP ops
 
 -- Validates that each document either has only one operation or all named operations
-validateOperationsP :: [Operation a] -> Parser (EitherF Identity (HashMap Name) (Operation a))
+validateOperationsP :: [Operation a] -> Parser ((Identity :+: HashMap Name) (Operation a))
 validateOperationsP [] = parseErrorP [] "Expected at least one root operation, found none"
-validateOperationsP (op:[]) = pure $ LeftF $ pure op
-validateOperationsP ops = RightF <$> (sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) =<< mapM go ops)
+validateOperationsP (op:[]) = pure $ L1 $ pure op
+validateOperationsP ops = R1 <$> (sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) =<< mapM go ops)
   where
     go op | Just name <- opName op = pure (name, pure op)
           | otherwise = validationErrorP [opPos op] $ "Unnamed operation in document with multiple operations"
