@@ -202,6 +202,7 @@ class
   type OutputOf a sym :: *
   type InputOf a sym :: *
   type InputOf a sym = ()
+  fieldDef :: (InputOf a sym) FieldDef (OutputOf a sym)
   description :: Maybe Text
   description = Nothing
   resolver :: (InputOf a sym) -> a -> m (OutputOf a sym)
@@ -216,7 +217,7 @@ instance
   ) => GetFields (sym ': tail) m a where
     getFields
       = ( Text.pack $ symbolVal $ Proxy @sym
-        , Some $ FieldDef desc res
+        , Some $ fieldDef @m @a @sym
         ) : getFields @tail @m @a
         where
           desc = description @m @a @sym

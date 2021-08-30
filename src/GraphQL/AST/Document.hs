@@ -16,7 +16,7 @@ import GraphQL.Response (Pos)
 
 import GHC.Generics ((:+:))
 
-import Control.Comonad.Cofree (Cofree, ComonadCofree(..))
+import Control.Comonad.Cofree (Cofree, unwrap)
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
@@ -97,7 +97,7 @@ data ValueF a r
   | Val (ConstValueF r)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type Value a = Cofree (ValueF a) Pos
+type Value a = Att (ValueF a)
 
 instance Bifunctor ValueF where
   bimap f _ (Var a) = Var $ f a
@@ -176,7 +176,7 @@ data SelectionF a r
   | InlineFragment Name (NonEmpty r)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type Selection a = Cofree (SelectionF a) Pos
+type Selection a = Att (SelectionF a)
 
 instance Bifunctor SelectionF where
   bimap f g (Node a r)           = Node (f a) (fmap g r)
@@ -286,3 +286,5 @@ data Document a
     }
 
 type Name = Text
+
+type Att f = Cofree f Pos
