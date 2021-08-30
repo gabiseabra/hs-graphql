@@ -22,13 +22,12 @@ import Control.Monad ((<=<))
 import Data.Aeson ((.=), object)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
-import Data.Typeable (Typeable)
 
 data Enum0
   = Enum_A
   | Enum_B
   | Enum_C
-  deriving (Generic, Typeable)
+  deriving (Generic)
 
 instance GraphQLType Enum0 where
   type KIND Enum0 = ENUM
@@ -36,9 +35,9 @@ instance GraphQLType Enum0 where
 
 data Input0 = Input0 { i0 :: Enum0 } deriving (Generic, GraphQLInput)
 
-data A m = A { a0 :: Input0 -> m Enum0 } deriving (Generic, Typeable)
+data A m = A { a0 :: Input0 -> m Enum0 } deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (A m) where
+instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 

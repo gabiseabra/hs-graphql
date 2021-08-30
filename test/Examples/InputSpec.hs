@@ -24,13 +24,12 @@ import Data.Aeson ((.=), object)
 import Data.Maybe (fromMaybe)
 import qualified Data.Aeson as JSON
 import Data.Text (Text)
-import Data.Typeable (Typeable)
 
 data AnInputObject
   = AnInputObject
     { io_0 :: String
     , io_1 :: Maybe String
-    } deriving (Generic, Typeable)
+    } deriving (Generic)
 
 instance Show AnInputObject where show (AnInputObject { io_0, io_1 }) = fromMaybe io_0 io_1
 
@@ -57,9 +56,9 @@ data A m
     , a1 :: ()     -> m (Maybe String)
     , a2 :: Input0 -> m Int
     , a3 :: Input1 -> m (A m)
-    } deriving (Generic, Typeable)
+    } deriving (Generic)
 
-instance (Typeable m, Applicative m) => GraphQLType (A m) where
+instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 

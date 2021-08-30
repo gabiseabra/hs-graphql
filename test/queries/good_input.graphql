@@ -1,0 +1,27 @@
+query (
+  $someVar: SomeType
+  $nonNullVar: SomeType!
+  $listVar: [Int!]!
+) {
+  a    # No input is ok
+  b () # Empty input is ok
+  c (
+    nullVal      : null
+    boolVal      : true
+    intVal       : 123
+    doubleVal    : 1.23E-6
+    enumVal      : MY_ENUM
+    listVal      : [ A, B, C ]
+    listVal2     : [ 1  2  3 ] # Commas are optional
+    objectVal    : { someVal    : $someVar
+                   , nonNullVal : $nonNullVar
+                   , listVal    : $listVar
+                   }
+    inlineStr    : "inline string"
+    multilineStr : """
+    multiline
+
+    \"string\"
+    """
+  )
+}

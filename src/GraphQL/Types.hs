@@ -11,6 +11,7 @@
   , TypeOperators
   , StandaloneKindSignatures
   , AllowAmbiguousTypes
+  , PolyKinds
 #-}
 
 module GraphQL.Types where
@@ -30,9 +31,15 @@ import qualified Data.Vector as Vec
 import Data.Void (Void)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Data.Typeable (Typeable)
 
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
+
+type Undefined :: OperationType -> (* -> *) -> * -> *
+data Undefined op m r = Undefined
+
+instance GraphQLType (Undefined op m r) where
+  type KIND (Undefined op m r) = ROOT @op @m @r
+  typeDef = RootType undefined UndefinedDef
 
 instance GraphQLType ID where
   type KIND ID = SCALAR
@@ -99,7 +106,6 @@ instance
   ( StringOrListK [a] ~ sym
   , KnownSymbol sym
   , List_GraphQLType sym [a]
-  , Typeable [a]
   ) => GraphQLType [a] where
   type KIND [a] = LIST_KIND (StringOrListK [a]) [a]
   typeDef = list_typeDef @sym @[a]

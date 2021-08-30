@@ -14,7 +14,8 @@
 #-}
 
 module GraphQL.IO.Input
-  ( readInputType
+  ( Input
+  , readInputType
   , readInputFields
   , readInput
   ) where

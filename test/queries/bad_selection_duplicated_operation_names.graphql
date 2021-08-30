@@ -1,0 +1,2 @@
+query A { a }
+query A { b }
