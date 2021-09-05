@@ -38,8 +38,6 @@ import Data.Profunctor.Cayley (Cayley)
 
 type Typename = Text
 
-data Some f where Some :: f a -> Some f
-
 data OperationType
   = QUERY
   | MUTATION
@@ -162,20 +160,23 @@ data ObjectDef m a
     { objectFields :: Map Text (Resolver m a)
     }
 
-data FieldDef t m a where
+data FieldDef t m i a where
   FieldDef ::
     ( GraphQLInput i
     , GraphQLOutputType m a
     ) =>
     { fieldDescription :: Maybe Text
     , fieldResolver :: (i -> t m a)
-    } -> FieldDef t m a
+    } -> FieldDef t m i a
 
-type ResolverT a = Compose ((->) a)
-type Resolver m a = Some (FieldDef (ResolverT a) m)
+data Some2 p where Some2 :: p a b -> Some2 p
 
-data ProducerT r m a = Producer { runProducer :: (a -> m Response) -> m r }
-type Producer r m a = Some (FieldDef (Cayley ((->) a) (ProducerT r)) m)
+type ResolverF m a i o = FieldDef (Compose ((->) a)) m i o
+type Resolver m a = Some2 (FieldDef (Compose ((->) a)) m)
+
+data ProducerT a r m o = Producer { runProducer :: a -> (o -> m Response) -> m r }
+type ProducerF m a r i o = FieldDef (ProducerT a r) m i o
+type Producer m a r = Some2 (FieldDef (ProducerT a r) m)
 
 type InputObjectDef :: * -> *
 data InputObjectDef a where
@@ -219,7 +220,7 @@ data NullableDef f where
 
 type RootDef :: OperationType -> (* -> *) -> * -> * -> *
 data RootDef op m a r where
-  QueryDef        :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef QUERY        m a r
-  MutationDef     :: (Response -> m r) -> Map Text (Resolver   m a) -> RootDef MUTATION     m a r
-  SubscriptionDef ::                      Map Text (Producer r m a) -> RootDef SUBSCRIPTION m a r
+  QueryDef        :: (Response -> m r) -> Map Text (Resolver m a  ) -> RootDef QUERY        m a r
+  MutationDef     :: (Response -> m r) -> Map Text (Resolver m a  ) -> RootDef MUTATION     m a r
+  SubscriptionDef ::                      Map Text (Producer m a r) -> RootDef SUBSCRIPTION m a r
   UndefinedDef    ::                                                   RootDef op           m a r

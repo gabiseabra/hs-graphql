@@ -129,7 +129,7 @@ objectDef ty
   = ObjectType ty Nothing
   $ ObjectDef
   $ mkFieldMap @(GraphQLOutputType m)
-  $ Some . FieldDef Nothing . const @_ @() . Compose . fmap pure
+  $ Some2 . FieldDef Nothing . const @_ @() . Compose . fmap pure
 
 resolverDef :: forall a m
   .  Rec.FromNative a
@@ -142,7 +142,7 @@ resolverDef ty
   = ObjectType ty Nothing
   $ ObjectDef
   $ mkFieldMap @(GraphQLResolver m)
-  $ Some . resolverFieldDef
+  $ Some2 . resolverFieldDef
 
 canonicalDef :: forall sym m a proxy
   .  GetFields sym m a
@@ -167,7 +167,7 @@ queryDef ty f
   = RootType ty
   $ QueryDef f
   $ mkFieldMap @(GraphQLResolver m)
-  $ Some . resolverFieldDef
+  $ Some2 . resolverFieldDef
 
 mutationDef :: forall m a r
   .  Rec.FromNative a
@@ -181,18 +181,21 @@ mutationDef ty f
   = RootType ty
   $ MutationDef f
   $ mkFieldMap @(GraphQLResolver m)
-  $ Some . resolverFieldDef
+  $ Some2 . resolverFieldDef
 
 class GraphQLResolver m a where
+  type ResolverInput a :: *
   type ResolverOutput a :: *
-  resolverFieldDef :: (ctx -> a) -> FieldDef (ResolverT ctx) m (ResolverOutput a)
+  resolverFieldDef :: (ctx -> a) -> ResolverF m ctx (ResolverInput a) (ResolverOutput a)
+-- (ctx -> m )
 
 instance
   ( GraphQLInput i
   , GraphQLOutputType m a
   ) => GraphQLResolver m (i -> m a) where
+  type ResolverInput (i -> m a) = i
   type ResolverOutput (i -> m a) = a
-  resolverFieldDef = FieldDef Nothing . (Compose .) . flip
+  resolverFieldDef = mkResolver Nothing . flip
 
 type GraphQLField :: (* -> *) -> * -> Symbol -> Constraint
 class
@@ -202,9 +205,14 @@ class
   type OutputOf a sym :: *
   type InputOf a sym :: *
   type InputOf a sym = ()
+  fieldDef ::  ResolverF m a (InputOf a sym) (OutputOf a sym)
+  fieldDef = mkResolver (description @m @a @sym) (resolver @m @a @sym)
   description :: Maybe Text
   description = Nothing
   resolver :: (InputOf a sym) -> a -> m (OutputOf a sym)
+
+mkResolver :: (GraphQLInput i, GraphQLOutputType m o) => Maybe Text -> (i -> a -> m o) -> ResolverF m a i o
+mkResolver desc = FieldDef desc . (Compose .)
 
 type GetFields :: [Symbol] -> (* -> *) -> * -> Constraint
 class GetFields sym m a where getFields :: [(Text, Resolver m a)]
@@ -216,22 +224,24 @@ instance
   ) => GetFields (sym ': tail) m a where
     getFields
       = ( Text.pack $ symbolVal $ Proxy @sym
-        , Some $ FieldDef desc res
+        , Some2 $ fieldDef @m @a @sym
         ) : getFields @tail @m @a
         where
           desc = description @m @a @sym
           res = Compose . resolver @m @a @sym
 
 class GraphQLProducer m r a where
+  type ProducerInput a :: *
   type ProducerOutput a :: *
-  producerFieldDef :: (ctx -> a) -> FieldDef (Cayley ((->) ctx) (ProducerT r)) m (ProducerOutput a)
+  producerFieldDef :: (ctx -> a) -> ProducerF m ctx r (ProducerInput a) (ProducerOutput a)
 
 instance
   ( GraphQLInput i
   , GraphQLOutputType m a
   ) => GraphQLProducer m r (i -> (a -> m Response) -> m r) where
+  type ProducerInput (i -> (a -> m Response) -> m r) = i
   type ProducerOutput (i -> (a -> m Response) -> m r) = a
-  producerFieldDef = FieldDef Nothing . ((Cayley . (Producer .)) .) . flip
+  producerFieldDef = FieldDef Nothing . (Producer .) . flip
 
 mkFieldMap :: forall c a m
   .  Rec.FromNative a

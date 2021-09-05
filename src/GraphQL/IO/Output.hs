@@ -144,7 +144,7 @@ validate'Object t ty (ObjectDef fields) = fmap HashMap.fromList $ mapM (check . 
         )
     checkField (NodeF (Sel { name, alias, input }) tail) = case Map.lookup name fields of
       Nothing -> Left $ "Field " <> name <> " does not exist in object of type " <> ty
-      Just (Some (FieldDef _ f)) -> do
+      Just (Some2 (FieldDef _ f)) -> do
         i <- readInput ("input of " <> ty) input
         pure (fromMaybe name alias, (tail, Exists . Kleisli . getCompose $ f i))
 
