@@ -6,22 +6,25 @@
 
 module GraphQL.AST
   ( Name
-  , Pos(..)
-  , OperationType(..)
   , TypeDefinition(..)
+  , ConstValueF(..)
   , ValueF(..)
-  , FieldF(..)
-  , SelectionNodeF(..)
-  , FragmentF(..)
-  , DocumentF(..)
-  , Document
   , Value
-  , Fragment
-  , FieldSet
-  , SelectionSet
-  , typeDefinition
+  , Variable(..)
+  , FieldF(..)
+  , Field
+  , SelectionF(..)
+  , Selection
+  , Fragment(..)
+  , Operation(..)
+  , Document(..)
+  , Tree
+  , Att
+  , ExecutableField
+  , ExecutableOperation
   , parseDocument
   , collectFields
+  , getExecutableOperation
   ) where
 
 import GraphQL.AST.Document
@@ -51,15 +54,15 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-typeDefinition :: TS.TypeDef k a -> TypeDefinition
-typeDefinition (TS.ListType     _ def _) = ListType $ typeDefinition def
-typeDefinition (TS.NullableType _ def _) = case typeDefinition def of
-  (NonNullType ty) -> ty
-  ty               -> ty
-typeDefinition def = NonNullType $ NamedType $ TS.typename def
+parseDocument :: FilePath -> Text -> V (Document (Selection (Field Name)))
+parseDocument file = first err . parse documentP file
 
-parseDocument :: FilePath -> Maybe Name -> JSON.Object -> Text -> V (HashMap Name Fragment, DocumentF SelectionSet)
-parseDocument path opName input = validateDocument opName input <=< first err . parse parseRootNodes path
+-- typeDefinition :: TS.TypeDef k a -> TypeDefinition
+-- typeDefinition (TS.ListType     _ def _) = ListType $ typeDefinition def
+-- typeDefinition (TS.NullableType _ def _) = case typeDefinition def of
+--   (NonNullType ty) -> ty
+--   ty               -> ty
+-- typeDefinition def = NonNullType $ NamedType $ TS.typename def
 
 err :: ParseErrorBundle Text GraphQLError -> NonEmpty GraphQLError
 err e = ne $ foldMap (formatParseError . second mkPos) errorsWithPos

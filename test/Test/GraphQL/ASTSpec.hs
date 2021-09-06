@@ -11,16 +11,6 @@ import GHC.Generics (Generic)
 
 import GraphQL.Response
 import GraphQL.AST
-  ( Pos(..)
-  , OperationType(..)
-  , TypeDefinition(..)
-  , ValueF(..)
-  , FieldF(..)
-  , DocumentF(..)
-  , FieldSet
-  , parseDocument
-  , collectFields
-  )
 
 import Control.Monad ((<=<))
 import Control.Comonad.Cofree (Cofree(..))
@@ -31,7 +21,7 @@ import Text.Megaparsec (runParserT)
 import Text.Megaparsec.Error (ParseErrorBundle)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NE
-import qualified Data.HashMap.Strict as Map
+import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text (readFile)
 import Data.Functor.Base (TreeF(..))
@@ -40,8 +30,12 @@ import Data.Functor.Identity (Identity(..))
 pos :: Int -> Int -> Pos
 pos line col = (Pos line col)
 
-parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V (DocumentF FieldSet))
-parseTest' op (JSON.Object i) f = (uncurry collectFields <=< parseDocument f op i) <$> Text.readFile f
+parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V ExecutableOperation)
+parseTest' opName (JSON.Object input) fileName
+  = ( getExecutableOperation input opName
+  <=< collectFields
+  <=< parseDocument fileName )
+  <$> Text.readFile fileName
 parseTest = parseTest' Nothing
 parseTestNamed = parseTest' . Just
 
@@ -52,6 +46,11 @@ spec = describe "document" $ do
       someVarType = NamedType "SomeType"
       nonNullVarType = NonNullType $ NamedType "SomeType"
       listVarType = NonNullType $ ListType $ NonNullType $ NamedType "Int"
+      vars = HashMap.fromList
+        [ ("someVar", Variable (pos 2 13) someVarType Nothing)
+        , ("nonNullVar", Variable (pos 3 16) nonNullVarType Nothing)
+        , ("listVar", Variable (pos 4 13) listVarType Nothing)
+        ]
       good_input = object
         [ "nonNullVar" .= (420 :: Int)
         , "listVar" .= ([6, 9] :: [Int])
@@ -60,40 +59,40 @@ spec = describe "document" $ do
         [ "nonNullVar" .= (Nothing :: Maybe Int)
         , "listVar" .= ([6, 9] :: [Int])
         ]
-      vars'c = Map.fromList
-        [ ("nullVal", (pos 9 20, Nothing) :< NullVal)
-        , ("boolVal", (pos 10 20, Nothing) :< BoolVal True)
-        , ("intVal", (pos 11 20, Nothing) :< IntVal 123)
-        , ("doubleVal", (pos 12 20, Nothing) :< DoubleVal 1.23E-6)
-        , ("enumVal", (pos 13 20, Nothing) :< EnumVal "MY_ENUM")
-        , ("listVal", (pos 14 20, Nothing) :< ListVal
-            [ (pos 14 22, Nothing) :< EnumVal "A"
-            , (pos 14 25, Nothing) :< EnumVal "B"
-            , (pos 14 28, Nothing) :< EnumVal "C"
-            ]
+      val'c = HashMap.fromList
+        [ ("nullVal", pos 9 20 :< Val NullVal)
+        , ("boolVal", pos 10 20 :< Val (BoolVal True))
+        , ("intVal", pos 11 20 :< Val (IntVal 123))
+        , ("doubleVal", pos 12 20 :< Val (DoubleVal 1.23E-6))
+        , ("enumVal", pos 13 20 :< Val (EnumVal "MY_ENUM"))
+        , ("listVal", pos 14 20 :< Val (ListVal
+            [ pos 14 22 :< Val (EnumVal "A")
+            , pos 14 25 :< Val (EnumVal "B")
+            , pos 14 28 :< Val (EnumVal "C")
+            ])
           )
-        , ("listVal2", (pos 15 20, Nothing) :< ListVal
-            [ (pos 15 22, Nothing) :< IntVal 1
-            , (pos 15 25, Nothing) :< IntVal 2
-            , (pos 15 28, Nothing) :< IntVal 3
-            ]
+        , ("listVal2", pos 15 20 :< Val (ListVal
+            [ pos 15 22 :< Val (IntVal 1)
+            , pos 15 25 :< Val (IntVal 2)
+            , pos 15 28 :< Val (IntVal 3)
+            ])
           )
-        , ("objectVal", (pos 16 20, Nothing) :< ( ObjectVal $ Map.fromList
-            [ ("someVal", (pos 16 35, Just someVarType) :< NullVal)
-            , ("nonNullVal", (pos 17 35, Just nonNullVarType) :< Var (JSON.toJSON (420 :: Int)))
-            , ("listVal", (pos 18 35, Just listVarType) :< Var (JSON.toJSON ([6, 9] :: [Int])))
-            ] )
+        , ("objectVal", pos 16 20 :< Val (ObjectVal $ HashMap.fromList
+            [ ("someVal",    pos 16 35 :< Var ("someVar", Variable (pos 2 13) someVarType JSON.Null))
+            , ("nonNullVal", pos 17 35 :< Var ("nonNullVar", Variable (pos 3 16) nonNullVarType $ JSON.toJSON (420 :: Int)))
+            , ("listVal",    pos 18 35 :< Var ("listVar", Variable (pos 4 13) listVarType $ JSON.toJSON ([6, 9] :: [Int])))
+            ])
           )
-        , ("inlineStr", (pos 20 20, Nothing) :< StrVal "inline string")
-        , ("multilineStr", (pos 21 20, Nothing) :< StrVal "    multiline\n\n    \"string\"\n    ")
+        , ("inlineStr", pos 20 20 :< Val (StrVal "inline string"))
+        , ("multilineStr", pos 21 20 :< Val (StrVal "    multiline\n\n    \"string\"\n    "))
         ]
-      doc = Query Nothing $ NE.fromList
-        [ (pos 6 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
-        , (pos 7 3) :< NodeF (Field Nothing Nothing "b" mempty)  []
-        , (pos 8 3) :< NodeF (Field Nothing Nothing "c" vars'c)  []
+      op = Query (pos 1 1) Nothing vars $ NE.fromList
+        [ pos 6 3 :< NodeF (Field Nothing Nothing "a" mempty)  []
+        , pos 7 3 :< NodeF (Field Nothing Nothing "b" mempty)  []
+        , pos 8 3 :< NodeF (Field Nothing Nothing "c" val'c)  []
         ]
     parseTest good_input "test/queries/good_input.graphql" `shouldReturn`
-      Right doc
+      Right op
     parseTest bad_input "test/queries/good_input.graphql" `shouldReturn`
       validationError [pos 3 16] "Required variable $nonNullVar is missing from input"
   it "test/queries/bad_input_undefined_variable.graphql" $ do
@@ -101,42 +100,42 @@ spec = describe "document" $ do
       validationError [pos 2 12] "Variable $someVar is not defined"
   it "test/queries/good_selection.graphql" $ do
     let
-      vars'b = Map.fromList
-        [ ("var", (pos 3 10, Nothing) :< IntVal 420)
+      val'b = HashMap.fromList
+        [ ("var", pos 3 10 :< Val (IntVal 420))
         ]
-      doc = Query Nothing $ NE.fromList
-        [ (pos 2 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
-        , (pos 3 3) :< NodeF (Field Nothing Nothing "b" vars'b)  []
-        , (pos 4 3) :< NodeF (Field Nothing (Just "alias") "c" mempty)
-          [ (pos 4 14) :< NodeF (Field Nothing Nothing "c0" mempty) []
+      op = Query (pos 1 1) Nothing mempty $ NE.fromList
+        [ pos 2 3 :< NodeF (Field Nothing Nothing "a" mempty)  []
+        , pos 3 3 :< NodeF (Field Nothing Nothing "b" val'b)  []
+        , pos 4 3 :< NodeF (Field Nothing (Just "alias") "c" mempty)
+          [ pos 4 14 :< NodeF (Field Nothing Nothing "c0" mempty) []
           ]
-        , (pos 5 3) :< NodeF (Field Nothing Nothing "ab" mempty)
-          [ (pos 6 15) :< NodeF (Field (Just "A") Nothing "a0" mempty) []
-          , (pos 12 3) :< NodeF (Field (Just "B") Nothing "b0" mempty) []
-          , (pos 17 3) :< NodeF (Field (Just "B") Nothing "b1" mempty)
-            [ (pos 17 8) :< NodeF (Field Nothing Nothing "x" mempty) []
+        , pos 5 3 :< NodeF (Field Nothing Nothing "ab" mempty)
+          [ pos 6 15 :< NodeF (Field (Just "A") Nothing "a0" mempty) []
+          , pos 12 3 :< NodeF (Field (Just "B") Nothing "b0" mempty) []
+          , pos 17 3 :< NodeF (Field (Just "B") Nothing "b1" mempty)
+            [ pos 17 8 :< NodeF (Field Nothing Nothing "x" mempty) []
             ]
           ]
         ]
     parseTest (object []) "test/queries/good_selection.graphql"
-      `shouldReturn` Right doc
+      `shouldReturn` Right op
   it "test/queries/good_selection_shorthand_query.graphql" $ do
     let
-      doc = Query Nothing $ NE.fromList
-        [ (pos 1 3) :< NodeF (Field Nothing Nothing "a" mempty)  []
+      op = Query (pos 1 1) Nothing mempty $ NE.fromList
+        [ pos 1 3 :< NodeF (Field Nothing Nothing "a" mempty)  []
         ]
     parseTest (object []) "test/queries/good_selection_shorthand_query.graphql"
-      `shouldReturn` Right doc
+      `shouldReturn` Right op
   it "test/queries/good_selection_multiple_named_operations.graphql" $ do
     let
-      query = Query (Just "Query") $ NE.fromList
-        [ (pos 1 15) :< NodeF (Field Nothing Nothing "a" mempty)  []
+      query = Query (pos 1 1) (Just "Query") mempty $ NE.fromList
+        [ pos 1 15 :< NodeF (Field Nothing Nothing "a" mempty) []
         ]
-      mutation = Mutation (Just "Mutation") $ NE.fromList
-        [ (pos 2 21) :< NodeF (Field Nothing Nothing "b" mempty)  []
+      mutation = Mutation (pos 2 1) (Just "Mutation") mempty $ NE.fromList
+        [ pos 2 21 :< NodeF (Field Nothing Nothing "b" mempty) []
         ]
-      subscription = Subscription (Just "Subscription") $
-        (pos 3 29) :< NodeF (Field Nothing Nothing "c" mempty)  []
+      subscription = Subscription (pos 3 1) (Just "Subscription") mempty $
+        pos 3 29 :< NodeF (Field Nothing Nothing "c" mempty) []
     parseTestNamed "Query" (object []) "test/queries/good_selection_multiple_named_operations.graphql"
       `shouldReturn` Right query
     parseTestNamed "Mutation" (object []) "test/queries/good_selection_multiple_named_operations.graphql"
@@ -156,10 +155,10 @@ spec = describe "document" $ do
       `shouldReturn` validationError [pos 12 11] "Cycle in fragment A0"
   it "test/queries/bad_selection_duplicated_fragment_names.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_duplicated_fragment_names.graphql"
-      `shouldReturn` parseError [pos 5 10] "Duplicated fragment names: A"
+      `shouldReturn` validationError [pos 5 10, pos 6 10] "Duplicated fragment name A"
   it "test/queries/bad_selection_multiple_unnamed_operations.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_multiple_unnamed_operations.graphql"
-      `shouldReturn` validationError [pos 3 1] "Unnamed operations in document with multiple operations"
+      `shouldReturn` validationError [pos 3 1] "Unnamed operation in document with multiple operations"
   it "test/queries/bad_selection_duplicated_operation_names.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_duplicated_operation_names.graphql"
-      `shouldReturn` validationError [pos 1 1] "Duplicated operation names: A"
+      `shouldReturn` validationError [pos 1 1, pos 2 1] "Duplicated operation name A"
