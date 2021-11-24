@@ -6,7 +6,10 @@
   , DeriveFoldable
   , DeriveTraversable
   , DeriveAnyClass
+  , DeriveGeneric
   , TypeOperators
+  , RankNTypes
+  , OverloadedStrings
 #-}
 
 module GraphQL.AST.Document where
@@ -14,27 +17,32 @@ module GraphQL.AST.Document where
 import GraphQL.TypeSystem.Main (OperationType(..))
 import GraphQL.Response (Pos)
 
-import GHC.Generics ((:+:))
+import GHC.Generics ((:+:), Generic1)
 
-import Control.Comonad.Cofree (Cofree, unwrap)
+import Control.Comonad.Cofree (Cofree(..), unwrap)
+import qualified Control.Comonad.Trans.Cofree as CofreeT
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
 import Data.Bitraversable (Bitraversable(..))
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Monoid (All(..))
 import Data.Vector (Vector)
 import qualified Data.Vector as Vec
 import Data.Text (Text)
 import qualified Data.Text as Text
+import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF)
+import Data.Functor.Foldable (cata)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.List as List
 import Data.Functor.Identity (Identity(..))
+import Data.Functor.Const (Const(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
 import Lens.Micro (Lens, Lens', lens, (<&>))
 
--- * Value nodes
+-- * Value node
 
 data ConstValueF r
   = NullVal
@@ -45,31 +53,11 @@ data ConstValueF r
   | EnumVal Text
   | ListVal (Vector r)
   | ObjectVal (HashMap Name r)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Functor, Foldable, Traversable, Generic1)
 
 type ConstValue = Att ConstValueF
 
-showConstVal :: ConstValueF ConstValue -> String
-showConstVal NullVal       = "null"
-showConstVal (StrVal a)    = show a
-showConstVal (IntVal a)    = show a
-showConstVal (DoubleVal a) = show a
-showConstVal (BoolVal a)   = show a
-showConstVal (EnumVal a)   = show a
-showConstVal (ListVal r)   = "[" <> List.intercalate ", " as <> "]"
-  where as = foldMap (pure . showConstVal . unwrap) r
-showConstVal (ObjectVal r) = "{" <> List.intercalate ", " kv <> "}"
-  where kv = HashMap.foldMapWithKey (\k v -> [show k <> ": " <> showConstVal (unwrap v)]) r
-
-constValToJSON :: ConstValueF ConstValue -> JSON.Value
-constValToJSON NullVal       = JSON.Null
-constValToJSON (StrVal a)    = JSON.toJSON a
-constValToJSON (IntVal a)    = JSON.toJSON a
-constValToJSON (DoubleVal a) = JSON.toJSON a
-constValToJSON (BoolVal a)   = JSON.toJSON a
-constValToJSON (EnumVal a)   = JSON.toJSON a
-constValToJSON (ListVal r)   = JSON.toJSON $ fmap (constValToJSON . unwrap) r
-constValToJSON (ObjectVal r) = JSON.Object $ fmap (constValToJSON . unwrap) r
+type Value = Att (Const Name :+: ConstValueF)
 
 instance Eq1 ConstValueF where
   liftEq _ NullVal        NullVal        = True
@@ -83,7 +71,7 @@ instance Eq1 ConstValueF where
   liftEq _ _ _                           = False
 
 instance Show1 ConstValueF where
-  liftShowsPrec _  _  _ NullVal        = (<>) $ "NullVal"
+  liftShowsPrec _  _  _ NullVal        = (<>) "NullVal"
   liftShowsPrec _  _  _ (StrVal     a) = (<>) $ "StrVal " <> show a
   liftShowsPrec _  _  _ (IntVal     a) = (<>) $ "IntVal " <> show a
   liftShowsPrec _  _  _ (DoubleVal  a) = (<>) $ "DoubleVal " <> show a
@@ -92,61 +80,77 @@ instance Show1 ConstValueF where
   liftShowsPrec sp sl d (ListVal   as) = showsUnaryWith (liftShowsPrec sp sl) "ListVal" d as
   liftShowsPrec sp sl d (ObjectVal as) = showsUnaryWith (liftShowsPrec sp sl) "ObjectVal" d as
 
-data ValueF a r
-  = Var a
-  | Val (ConstValueF r)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+instance JSON.ToJSON a => JSON.ToJSON (ConstValueF a) where
+  toJSON NullVal       = JSON.Null
+  toJSON (StrVal a)    = JSON.toJSON a
+  toJSON (IntVal a)    = JSON.toJSON a
+  toJSON (DoubleVal a) = JSON.toJSON a
+  toJSON (BoolVal a)   = JSON.toJSON a
+  toJSON (EnumVal a)   = JSON.toJSON a
+  toJSON (ListVal r)   = JSON.toJSON $ fmap JSON.toJSON r
+  toJSON (ObjectVal r) = JSON.Object $ fmap JSON.toJSON r
 
-type Value a = Att (ValueF a)
-
-instance Bifunctor ValueF where
-  bimap f _ (Var a) = Var $ f a
-  bimap _ g (Val a) = Val $ fmap g a
-
-instance Bifoldable ValueF where
-  bifoldMap f _ (Var v) = f v
-  bifoldMap _ g (Val v) = foldMap g v
-
-instance Bitraversable ValueF where
-  bitraverse f _ (Var a) = Var <$> f a
-  bitraverse _ g (Val a) = Val <$> traverse g a
-
-instance Eq a => Eq1 (ValueF a) where
-  liftEq _ (Var a) (Var b) = a == b
-  liftEq f (Val a) (Val b) = liftEq f a b
-  liftEq _ _ _             = False
-
-instance Show a => Show1 (ValueF a) where
-  liftShowsPrec sp sl d (Var v) = (<>) $ "Var " <> show v
-  liftShowsPrec sp sl d (Val v) = showsUnaryWith (liftShowsPrec sp sl) "Val " d v
+instance JSON.ToJSON1 ConstValueF where
+  liftToJSON _ _ NullVal       = JSON.Null
+  liftToJSON _ _ (StrVal a)    = JSON.toJSON a
+  liftToJSON _ _ (IntVal a)    = JSON.toJSON a
+  liftToJSON _ _ (DoubleVal a) = JSON.toJSON a
+  liftToJSON _ _ (BoolVal a)   = JSON.toJSON a
+  liftToJSON _ _ (EnumVal a)   = JSON.toJSON a
+  liftToJSON f _ (ListVal r)   = JSON.toJSON $ fmap f r
+  liftToJSON f _ (ObjectVal r) = JSON.Object $ fmap f r
 
 -- * Variable node
 
-data Variable a
+data Variable
   = Variable
     { varPos :: Pos
     , varDefinition :: TypeDefinition
-    , varValue :: a
+    , varValue :: Maybe ConstValue
     } deriving (Eq, Show)
-
-type Variables a = HashMap Name (Variable a)
 
 -- * Type definition node
 
-data TypeDefinition
-  = ListType TypeDefinition
-  | NonNullType TypeDefinition
+data TypeDefinitionF r
+  = ListType r
+  | NonNullType r
   | NamedType Name
-  deriving (Eq)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Show TypeDefinition where
-  show (ListType ty) = "[" <> show ty <> "]"
-  show (NonNullType ty) = show ty <> "!"
-  show (NamedType ty) = Text.unpack ty
+instance Eq1 TypeDefinitionF where
+  liftEq f (ListType a) (ListType b) = f a b
+  liftEq f (NonNullType a) (NonNullType b) = f a b
+  liftEq _ (NamedType a) (NamedType b) = a == b
+  liftEq _ _ _ = False
+
+instance Show1 TypeDefinitionF where
+  liftShowsPrec sp sl d (ListType a) = showsUnaryWith sp "ListType" d a
+  liftShowsPrec sp sl d (NonNullType a) = showsUnaryWith sp "NonNullType" d a
+  liftShowsPrec _  _  _ (NamedType ty) = (<>) (Text.unpack ty)
+
+type TypeDefinition = Fix TypeDefinitionF
+
+showTypeDefinition :: TypeDefinition -> Text
+showTypeDefinition = cata alg
+  where
+    alg (ListType ty) = "[" <> ty <> "]"
+    alg (NonNullType ty) = ty <> "!"
+    alg (NamedType ty) = ty
+
+checkTypeDefinition :: TypeDefinition -> ConstValue -> Bool
+checkTypeDefinition (Fix (NonNullType ty)) (_:<NullVal) = False
+checkTypeDefinition (Fix (NonNullType ty)) val = checkTypeDefinition ty val
+checkTypeDefinition (Fix (ListType ty)) (_:<ListVal as) = getAll . foldMap (All . checkTypeDefinition ty) $ as
+checkTypeDefinition (Fix (ListType ty)) _ = False
+checkTypeDefinition _ _ = True
+
+isNullable :: TypeDefinition -> Bool
+isNullable (Fix (NonNullType _)) = False
+isNullable _ = True
 
 -- * Selection nodes
 
-data FieldF a
+data Field a
   = Field
     { fieldType :: Maybe Name
     , fieldAlias :: Maybe Name
@@ -154,16 +158,14 @@ data FieldF a
     , fieldArgs :: HashMap Name a
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-type Field a = FieldF (Value a)
-
-instance Eq1 FieldF where
+instance Eq1 Field where
   liftEq f (Field ty alias name args) (Field ty' alias' name' args')
     =  ty == ty'
     && alias == alias'
     && name == name'
     && liftEq f args args'
 
-instance Show1 FieldF where
+instance Show1 Field where
   liftShowsPrec sp sl d (Field ty alias name args)
     = showsUnaryWith
       (liftShowsPrec sp sl)
@@ -184,7 +186,7 @@ instance Bifunctor SelectionF where
   bimap f g (InlineFragment a r) = InlineFragment a (fmap g r)
 
 instance Bifoldable SelectionF where
-  bifoldMap f g (Node a r)           = f a `mappend` (foldMap g r)
+  bifoldMap f g (Node a r)           = f a `mappend` foldMap g r
   bifoldMap f g (FragmentSpread a)   = mempty
   bifoldMap f g (InlineFragment a r) = foldMap g r
 
@@ -208,7 +210,7 @@ instance Show a => Show1 (SelectionF a) where
 
 data Fragment a
   = Fragment
-    { fragPos ::Pos
+    { fragPos :: Pos
     , fragName :: Name
     , fragTypename :: Name
     , fragSelection :: NonEmpty a
@@ -218,57 +220,24 @@ _fragSelection :: Lens (Fragment a) (Fragment b) (NonEmpty a) (NonEmpty b)
 _fragSelection f frag = f (fragSelection frag) <&> \a -> frag { fragSelection = a }
 
 instance Eq1 Fragment where
-  liftEq f (Fragment name pos ty as) (Fragment name' pos' ty' bs)
-    =  name == name'
-    && pos == pos'
+  liftEq f (Fragment pos name ty as) (Fragment pos' name' ty' bs)
+    =  pos == pos'
+    && name == name'
     && ty == ty'
     && liftEq f as bs
 
 instance Show1 Fragment where
-  liftShowsPrec sp sl d (Fragment name pos ty as)
+  liftShowsPrec sp sl d (Fragment pos name ty as)
     = showsUnaryWith
       (liftShowsPrec sp sl)
-      ("Fragment " <> show name <> " " <> show pos <> " " <> show ty)
+      ("Fragment " <> " " <> show pos <> "  " <> show name <> " " <> show ty)
       d as
 
 data Operation a
-  = Query        Pos (Maybe Name) (Variables (Maybe JSON.Value)) (NonEmpty a)
-  | Mutation     Pos (Maybe Name) (Variables (Maybe JSON.Value)) (NonEmpty a)
-  | Subscription Pos (Maybe Name) (Variables (Maybe JSON.Value)) a
+  = Query        Pos (Maybe Name) (HashMap Name Variable) (NonEmpty a)
+  | Mutation     Pos (Maybe Name) (HashMap Name Variable) (NonEmpty a)
+  | Subscription Pos (Maybe Name) (HashMap Name Variable) a
   deriving (Eq, Show, Functor, Foldable, Traversable)
-
-opType :: Operation a -> OperationType
-opType (Query        _ _ _ _) = QUERY
-opType (Mutation     _ _ _ _) = MUTATION
-opType (Subscription _ _ _ _) = SUBSCRIPTION
-
-opPos :: Operation a -> Pos
-opPos (Query        pos _ _ _) = pos
-opPos (Mutation     pos _ _ _) = pos
-opPos (Subscription pos _ _ _) = pos
-
-opName :: Operation a -> Maybe Name
-opName (Query        _ name _ _) = name
-opName (Mutation     _ name _ _) = name
-opName (Subscription _ name _ _) = name
-
-opVariables :: Operation a -> Variables (Maybe JSON.Value)
-opVariables (Query        _ _ vars _) = vars
-opVariables (Mutation     _ _ vars _) = vars
-opVariables (Subscription _ _ vars _) = vars
-
-opSelection :: Operation a -> NonEmpty a
-opSelection (Query        _ _ _ as) = as
-opSelection (Mutation     _ _ _ as) = as
-opSelection (Subscription _ _ _ a ) = a:|[]
-
-setOpSelection :: Operation a -> NonEmpty b -> Operation b
-setOpSelection (Query        pos name vars _) as     = Query        pos name vars as
-setOpSelection (Mutation     pos name vars _) as     = Mutation     pos name vars as
-setOpSelection (Subscription pos name vars _) (a:|_) = Subscription pos name vars a
-
-_opSelection :: Lens (Operation a) (Operation b) (NonEmpty a) (NonEmpty b)
-_opSelection f op = f (opSelection op) <&> setOpSelection op
 
 instance Eq1 Operation where
   liftEq f (Query        pos name vars as) (Query        pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
@@ -283,6 +252,43 @@ instance Show1 Operation where
   liftShowsPrec sp sl d (Subscription pos name vars a)
     = showsUnaryWith sp ("Subscription " <> show pos <> " " <> show name <> " " <> show vars) d a
 
+opType :: Operation a -> OperationType
+opType Query {} = QUERY
+opType Mutation {} = MUTATION
+opType Subscription {} = SUBSCRIPTION
+
+opPos :: Operation a -> Pos
+opPos (Query        pos _ _ _) = pos
+opPos (Mutation     pos _ _ _) = pos
+opPos (Subscription pos _ _ _) = pos
+
+opName :: Operation a -> Maybe Name
+opName (Query        _ name _ _) = name
+opName (Mutation     _ name _ _) = name
+opName (Subscription _ name _ _) = name
+
+_opVariables :: Lens' (Operation a) (HashMap Name Variable)
+_opVariables f op = f (get op) <&> set op
+  where
+    get (Query        _ _ vars _) = vars
+    get (Mutation     _ _ vars _) = vars
+    get (Subscription _ _ vars _) = vars
+
+    set (Query        pos name _ as) vars = Query        pos name vars as
+    set (Mutation     pos name _ as) vars = Mutation     pos name vars as
+    set (Subscription pos name _ as) vars = Subscription pos name vars as
+
+_opSelection :: Lens (Operation a) (Operation b) (NonEmpty a) (NonEmpty b)
+_opSelection f op = f (get op) <&> set op
+  where
+    get (Query        _ _ _ as) = as
+    get (Mutation     _ _ _ as) = as
+    get (Subscription _ _ _ a ) = a:|[]
+
+    set (Query        pos name vars _) as     = Query        pos name vars as
+    set (Mutation     pos name vars _) as     = Mutation     pos name vars as
+    set (Subscription pos name vars _) (a:|_) = Subscription pos name vars a
+
 -- * Document
 
 data Document a
@@ -291,11 +297,16 @@ data Document a
     , operations :: (Identity :+: HashMap Name) (Operation a)
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
+_fragments :: Lens' (Document a) (HashMap Name (Fragment a))
+_fragments f doc = f (fragments doc) <&> \a -> doc { fragments = a }
+
+_operations :: Lens' (Document a) ((Identity :+: HashMap Name) (Operation a))
+_operations f doc = f (operations doc) <&> \a -> doc { operations = a }
+
 type Name = Text
 
 type Tree a = Att (TreeF a)
 
 type Att f = Cofree f Pos
 
-type ExecutableField = Field (Name, Variable JSON.Value)
-type ExecutableOperation = Operation (Tree ExecutableField)
+type ExecutableOperation = Operation (Tree (Field JSON.Value))

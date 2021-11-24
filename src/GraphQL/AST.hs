@@ -6,13 +6,13 @@
 
 module GraphQL.AST
   ( Name
-  , TypeDefinition(..)
+  , TypeDefinitionF(..)
+  , TypeDefinition
   , ConstValueF(..)
-  , ValueF(..)
+  , ConstValue
   , Value
   , Variable(..)
-  , FieldF(..)
-  , Field
+  , Field(..)
   , SelectionF(..)
   , Selection
   , Fragment(..)
@@ -20,7 +20,6 @@ module GraphQL.AST
   , Document(..)
   , Tree
   , Att
-  , ExecutableField
   , ExecutableOperation
   , parseDocument
   , collectFields
@@ -54,7 +53,7 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 
-parseDocument :: FilePath -> Text -> V (Document (Selection (Field Name)))
+parseDocument :: FilePath -> Text -> V (Document (Selection (Field Value)))
 parseDocument file = first err . parse documentP file
 
 -- typeDefinition :: TS.TypeDef k a -> TypeDefinition
@@ -72,16 +71,15 @@ err e = ne $ foldMap (formatParseError . second mkPos) errorsWithPos
     ne (a:as) = a :| as
 
 formatParseError :: (ParseError Text GraphQLError, Pos) -> [GraphQLError]
-formatParseError (FancyError _ e, pos) = fmap (formatFancyError . (,pos)) $ Set.elems e
+formatParseError (FancyError _ e, pos) = formatFancyError . (,pos) <$> Set.elems e
 formatParseError (TrivialError _ actual ref, pos)
   = pure
   $ ParseError [pos]
   $ Text.intercalate " "
-  $ [ maybe "" unexpected actual
+    [ maybe "" unexpected actual
     , "Expected: "
     , Text.intercalate " | "
-    $ fmap showErrorItem
-    $ Set.toList ref
+    $ showErrorItem <$> Set.toList ref
     ]
   where unexpected a = "Unexpected " <> showErrorItem a <> "."
 
@@ -90,7 +88,7 @@ formatFancyError (ErrorCustom e, _) = e
 formatFancyError (ErrorIndentation ord ref actual, pos)
   = ParseError [pos]
   $ Text.intercalate " "
-  $ [ "Incorrect indentation: got"
+    [ "Incorrect indentation: got"
     ,  Text.pack (show $ unPos actual) <> ","
     , "should be"
     , showOrd ord
@@ -101,9 +99,9 @@ formatFancyError (ErrorFail msg, pos)
   $ Text.pack msg
 
 showErrorItem :: ErrorItem Char -> Text
-showErrorItem (Tokens ts)  = Text.pack $ NE.toList ts
-showErrorItem (Label lbl)  = Text.pack $ NE.toList lbl
-showErrorItem (EndOfInput) = "end of input"
+showErrorItem (Tokens ts) = Text.pack $ NE.toList ts
+showErrorItem (Label lbl) = Text.pack $ NE.toList lbl
+showErrorItem EndOfInput  = "end of input"
 
 showOrd GT = "more than"
 showOrd LT = "less than"

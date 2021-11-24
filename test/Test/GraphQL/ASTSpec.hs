@@ -24,11 +24,12 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text (readFile)
+import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF(..))
 import Data.Functor.Identity (Identity(..))
 
 pos :: Int -> Int -> Pos
-pos line col = (Pos line col)
+pos line col = Pos line col
 
 parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V ExecutableOperation)
 parseTest' opName (JSON.Object input) fileName
@@ -43,9 +44,9 @@ spec :: Spec
 spec = describe "document" $ do
   it "test/queries/good_input.graphql" $ do
     let
-      someVarType = NamedType "SomeType"
-      nonNullVarType = NonNullType $ NamedType "SomeType"
-      listVarType = NonNullType $ ListType $ NonNullType $ NamedType "Int"
+      someVarType = Fix . NamedType $ "SomeType"
+      nonNullVarType = Fix . NonNullType $ someVarType
+      listVarType = Fix . NonNullType . Fix . ListType . Fix . NonNullType . Fix . NamedType $ "Int"
       vars = HashMap.fromList
         [ ("someVar", Variable (pos 2 13) someVarType Nothing)
         , ("nonNullVar", Variable (pos 3 16) nonNullVarType Nothing)
@@ -60,31 +61,22 @@ spec = describe "document" $ do
         , "listVar" .= ([6, 9] :: [Int])
         ]
       val'c = HashMap.fromList
-        [ ("nullVal", pos 9 20 :< Val NullVal)
-        , ("boolVal", pos 10 20 :< Val (BoolVal True))
-        , ("intVal", pos 11 20 :< Val (IntVal 123))
-        , ("doubleVal", pos 12 20 :< Val (DoubleVal 1.23E-6))
-        , ("enumVal", pos 13 20 :< Val (EnumVal "MY_ENUM"))
-        , ("listVal", pos 14 20 :< Val (ListVal
-            [ pos 14 22 :< Val (EnumVal "A")
-            , pos 14 25 :< Val (EnumVal "B")
-            , pos 14 28 :< Val (EnumVal "C")
-            ])
+        [ ("nullVal", JSON.Null)
+        , ("boolVal", JSON.toJSON True)
+        , ("intVal", JSON.toJSON (123 :: Int))
+        , ("doubleVal", JSON.toJSON (1.23E-6 :: Float))
+        , ("enumVal", JSON.String "MY_ENUM")
+        , ("listVal", JSON.toJSON (["A", "B", "C"] :: [String])
           )
-        , ("listVal2", pos 15 20 :< Val (ListVal
-            [ pos 15 22 :< Val (IntVal 1)
-            , pos 15 25 :< Val (IntVal 2)
-            , pos 15 28 :< Val (IntVal 3)
-            ])
+        , ("listVal2", JSON.toJSON ([1, 2, 3] :: [Int]))
+        , ("objectVal", object
+            [ "someVal" .= JSON.Null
+            , "nonNullVal" .= JSON.toJSON (420 :: Int)
+            , "listVal" .= JSON.toJSON ([6, 9] :: [Int])
+            ]
           )
-        , ("objectVal", pos 16 20 :< Val (ObjectVal $ HashMap.fromList
-            [ ("someVal",    pos 16 35 :< Var ("someVar", Variable (pos 2 13) someVarType JSON.Null))
-            , ("nonNullVal", pos 17 35 :< Var ("nonNullVar", Variable (pos 3 16) nonNullVarType $ JSON.toJSON (420 :: Int)))
-            , ("listVal",    pos 18 35 :< Var ("listVar", Variable (pos 4 13) listVarType $ JSON.toJSON ([6, 9] :: [Int])))
-            ])
-          )
-        , ("inlineStr", pos 20 20 :< Val (StrVal "inline string"))
-        , ("multilineStr", pos 21 20 :< Val (StrVal "    multiline\n\n    \"string\"\n    "))
+        , ("inlineStr", JSON.String "inline string")
+        , ("multilineStr", JSON.String "    multiline\n\n    \"string\"\n    ")
         ]
       op = Query (pos 1 1) Nothing vars $ NE.fromList
         [ pos 6 3 :< NodeF (Field Nothing Nothing "a" mempty)  []
@@ -101,7 +93,7 @@ spec = describe "document" $ do
   it "test/queries/good_selection.graphql" $ do
     let
       val'b = HashMap.fromList
-        [ ("var", pos 3 10 :< Val (IntVal 420))
+        [ ("var", JSON.toJSON (420 :: Int))
         ]
       op = Query (pos 1 1) Nothing mempty $ NE.fromList
         [ pos 2 3 :< NodeF (Field Nothing Nothing "a" mempty)  []
