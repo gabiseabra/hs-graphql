@@ -39,6 +39,7 @@ library
     , free
     , mtl
     , recursion-schemes
+    , monadic-recursion-schemes
     , row-types
     , text
     , unordered-containers
@@ -48,6 +49,8 @@ library
     , scientific
     , profunctors
     , microlens
+    , lens
+    , comonad
 
 test-suite hs-graphql-test
   default-language:    Haskell2010

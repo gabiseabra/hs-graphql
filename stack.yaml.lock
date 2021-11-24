@@ -11,6 +11,13 @@ packages:
       sha256: 0982996f259a250f4524466af479a8ca90ff72b143a3b9095ace24b1c371c4d5
   original:
     hackage: row-types-1.0.1.0
+- completed:
+    hackage: monadic-recursion-schemes-0.1.13.1@sha256:4cecf9b4f28493e46862f037d54689ff93bb4b4f798d1a71e79a8a846d6b44e7,1769
+    pantry-tree:
+      size: 356
+      sha256: e1d40fd10c140e8825cf93a1fcc04047ada7f461cd770f5c1fc41056aeaf5079
+  original:
+    hackage: monadic-recursion-schemes-0.1.13.1@sha256:4cecf9b4f28493e46862f037d54689ff93bb4b4f798d1a71e79a8a846d6b44e7
 snapshots:
 - completed:
     size: 585393
