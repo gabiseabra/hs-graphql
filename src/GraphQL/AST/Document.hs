@@ -1,26 +1,25 @@
 {-# LANGUAGE
     TypeFamilies
-  , GADTs
-  , DataKinds
   , DeriveFunctor
   , DeriveFoldable
   , DeriveTraversable
   , DeriveAnyClass
   , DeriveGeneric
   , TypeOperators
-  , RankNTypes
   , OverloadedStrings
+  , FlexibleInstances
+  , MultiParamTypeClasses
 #-}
 
 module GraphQL.AST.Document where
 
 import GraphQL.TypeSystem.Main (OperationType(..))
 import GraphQL.Response (Pos)
+import GraphQL.Internal
 
 import GHC.Generics ((:+:), Generic1)
 
-import Control.Comonad.Cofree (Cofree(..), unwrap)
-import qualified Control.Comonad.Trans.Cofree as CofreeT
+import Control.Comonad.Cofree (Cofree(..))
 import qualified Data.Aeson as JSON
 import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
@@ -40,7 +39,9 @@ import qualified Data.List as List
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
-import Lens.Micro (Lens, Lens', lens, (<&>))
+import Control.Lens (Lens, Lens', Traversal', lens, (<&>))
+import Control.Lens.Indexed
+import Control.Arrow ((&&&))
 
 -- * Value node
 
@@ -180,6 +181,15 @@ data SelectionF a r
 
 type Selection a = Att (SelectionF a)
 
+instance FunctorWithIndex (SelectionF a ()) (SelectionF a) where
+  imap f a = fmap (f (ix a)) a
+
+instance FoldableWithIndex (SelectionF a ()) (SelectionF a) where
+  ifoldMap f a = foldMap (f (ix a)) a
+
+instance TraversableWithIndex (SelectionF a ()) (SelectionF a) where
+  itraverse f a = traverse (f (ix a)) a
+
 instance Bifunctor SelectionF where
   bimap f g (Node a r)           = Node (f a) (fmap g r)
   bimap f g (FragmentSpread a)   = FragmentSpread a
@@ -205,6 +215,9 @@ instance Show a => Show1 (SelectionF a) where
   liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
   liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
+
+ix :: SelectionF a r -> SelectionF a ()
+ix = second (const ())
 
 -- * Root nodes
 
@@ -297,11 +310,14 @@ data Document a
     , operations :: (Identity :+: HashMap Name) (Operation a)
     } deriving (Eq, Show, Functor, Foldable, Traversable)
 
-_fragments :: Lens' (Document a) (HashMap Name (Fragment a))
-_fragments f doc = f (fragments doc) <&> \a -> doc { fragments = a }
+_docFragments :: Lens' (Document a) (HashMap Name (Fragment a))
+_docFragments f doc = f (fragments doc) <&> \a -> doc { fragments = a }
 
-_operations :: Lens' (Document a) ((Identity :+: HashMap Name) (Operation a))
-_operations f doc = f (operations doc) <&> \a -> doc { operations = a }
+_docOperations :: Lens' (Document a) ((Identity :+: HashMap Name) (Operation a))
+_docOperations f doc = f (operations doc) <&> \a -> doc { operations = a }
+
+_docSelections :: Traversal' (Document a) a
+_docSelections = traverse
 
 type Name = Text
 

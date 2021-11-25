@@ -19,6 +19,7 @@ import GraphQL.AST.Lexer (Parser)
 import GraphQL.Response (V, Pos(..))
 import qualified GraphQL.Response as E
 import GraphQL.TypeSystem.Main (OperationType(..))
+import GraphQL.Internal (hoistCofreeM)
 
 import GHC.Generics ((:+:)(..))
 
@@ -42,7 +43,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
-import qualified Data.Text.Encoding as Text
 import Data.Function (fix)
 import Data.Functor.Base (TreeF(..))
 import Text.Megaparsec (customFailure)
@@ -50,6 +50,7 @@ import Data.Monoid (All(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Foldable (Recursive(..), Base)
+import Data.Functor.Foldable.Monadic (cataM)
 import Data.Functor.Identity (Identity(..))
 import Lens.Micro (traverseOf)
 import Lens.Micro.Extras (view)
@@ -171,12 +172,3 @@ traverseAccum f = pure . join <=< traverse f
 
 liftJoin2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
 liftJoin2 f ma mb = join (liftA2 f ma mb)
-
-cataM :: (Monad m, Traversable (Base t), Recursive t)
-      => (Base t a -> m a) -- ^ algebra
-      -> t -> m a
-cataM phi = h
-  where h = phi <=< mapM h . project
-
-hoistCofreeM :: (Traversable f, Monad m) => (forall x . f x -> m (g x)) -> Cofree f a -> m (Cofree g a)
-hoistCofreeM f (x:<y) = (x:<) <$> (f =<< traverse (hoistCofreeM f) y)

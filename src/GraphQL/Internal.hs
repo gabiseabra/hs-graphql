@@ -17,8 +17,11 @@ module GraphQL.Internal
   , eraseWithLabelsF
   , eraseF
   , liftJSONResult
+  , hoistCofreeM
   ) where
 
+import Control.Comonad.Cofree
+import Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
 import Data.Functor.Const (Const(..))
 import Data.Proxy (Proxy(..))
@@ -52,8 +55,8 @@ recordAccessors :: forall a
   => Rec (Rec.Map ((->) a) (Rec.NativeRow a))
 recordAccessors = Rec.distribute (Rec.fromNative @a)
 
-data VC0 a r = VC0 { unVC0 :: (a -> Maybe (Var r)) }
-data VC1 a r = VC1 { unVC1 :: Rec (Rec.Map (Compose ((->) a) Maybe) r) }
+newtype VC0 a r = VC0 { unVC0 :: a -> Maybe (Var r) }
+newtype VC1 a r = VC1 { unVC1 :: Rec (Rec.Map (Compose ((->) a) Maybe) r) }
 
 variantCases :: forall c a
   .  Var.FromNative a
@@ -111,3 +114,6 @@ eraseF f
 liftJSONResult :: JSON.Result a -> V a
 liftJSONResult (JSON.Error e) = Left $ Text.pack e
 liftJSONResult (JSON.Success a) = Right a
+
+hoistCofreeM :: (Traversable f, Monad m) => (forall x . f x -> m (g x)) -> Cofree f a -> m (Cofree g a)
+hoistCofreeM f (x:<y) = (x:<) <$> (f =<< traverse (hoistCofreeM f) y)

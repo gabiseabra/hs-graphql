@@ -95,7 +95,6 @@ varsP = label "Variables"
              <*> typeDefP
              <*> defValueP
 
-
 argsP :: Parser (HashMap Name Value)
 argsP = label "Arguments" $ L.args L.parens L.name valueP
 
