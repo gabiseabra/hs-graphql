@@ -5,10 +5,13 @@
   , DeriveTraversable
   , DeriveAnyClass
   , DeriveGeneric
+  , DeriveDataTypeable
   , TypeOperators
   , OverloadedStrings
   , FlexibleInstances
+  , FlexibleContexts
   , MultiParamTypeClasses
+  , UndecidableInstances
 #-}
 
 module GraphQL.AST.Document where
@@ -19,14 +22,17 @@ import GraphQL.Internal
 
 import GHC.Generics ((:+:), Generic1)
 
-import Control.Comonad.Cofree (Cofree(..))
+import Control.Comonad.Cofree (Cofree(..), hoistCofree)
 import qualified Data.Aeson as JSON
+import Data.Void (Void)
 import Data.Bifunctor (Bifunctor(..))
 import Data.Bifoldable (Bifoldable(..))
 import Data.Bitraversable (Bitraversable(..))
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Monoid (All(..))
 import Data.Vector (Vector)
+import Data.Data (Data)
+import Data.Data.Lens (biplate)
 import qualified Data.Vector as Vec
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -38,9 +44,11 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.List as List
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Const (Const(..))
+import Data.Functor.Compose (Compose(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
-import Control.Lens (Lens, Lens', Traversal', lens, (<&>))
-import Control.Lens.Indexed
+import Control.Lens (Lens, Lens', Traversal', Traversal, lens, (<&>))
+import Control.Lens.Traversal (IndexedTraversal)
+import Control.Lens.Indexed (Indexable(..), itraverse)
 import Control.Arrow ((&&&))
 
 -- * Value node
@@ -157,7 +165,7 @@ data Field a
     , fieldAlias :: Maybe Name
     , fieldName :: Name
     , fieldArgs :: HashMap Name a
-    } deriving (Eq, Show, Functor, Foldable, Traversable)
+    } deriving (Eq, Show, Data, Functor, Foldable, Traversable)
 
 instance Eq1 Field where
   liftEq f (Field ty alias name args) (Field ty' alias' name' args')
@@ -177,18 +185,14 @@ data SelectionF a r
   = Node a [r]
   | FragmentSpread Name
   | InlineFragment Name (NonEmpty r)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Show, Data, Functor, Foldable, Traversable)
 
 type Selection a = Att (SelectionF a)
 
-instance FunctorWithIndex (SelectionF a ()) (SelectionF a) where
-  imap f a = fmap (f (ix a)) a
-
-instance FoldableWithIndex (SelectionF a ()) (SelectionF a) where
-  ifoldMap f a = foldMap (f (ix a)) a
-
-instance TraversableWithIndex (SelectionF a ()) (SelectionF a) where
-  itraverse f a = traverse (f (ix a)) a
+data Ix a
+  = NodeIx a Int
+  | FragmentIx Name Int
+  deriving (Eq, Show)
 
 instance Bifunctor SelectionF where
   bimap f g (Node a r)           = Node (f a) (fmap g r)
@@ -215,6 +219,14 @@ instance Show a => Show1 (SelectionF a) where
   liftShowsPrec sp sl d (Node a r)           = showsUnaryWith (liftShowsPrec sp sl) ("Node " <> show a) d r
   liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
+
+_nodes :: IndexedTraversal [Ix a] (Cofree (SelectionF a) x) (Cofree (SelectionF b) x) a b
+_nodes = flip go []
+  where
+    go f path (x:<y) = (x:<) <$> case y of
+      Node a xs -> Node <$> indexed f path a <*> itraverse (go f . (:path) . NodeIx a) xs
+      InlineFragment a xs -> InlineFragment a <$> itraverse (go f . (:path) . FragmentIx a) xs
+      FragmentSpread a -> pure $ FragmentSpread a
 
 ix :: SelectionF a r -> SelectionF a ()
 ix = second (const ())

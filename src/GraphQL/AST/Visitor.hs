@@ -42,8 +42,14 @@ import qualified Data.HashMap.Strict as HashMap
 
 type Visitor a = Document a -> V (Document a)
 
-validateDefaultValues :: Visitor a
-validateDefaultValues doc = do
+overlappingFieldsCanBeMerged :: Visitor (Selection (Field a))
+overlappingFieldsCanBeMerged doc = do
+  undefined
+  where
+    conflicts f0 f1 = fieldAlias f0 == fieldAlias f1 || fieldName f0 == fieldName f1 && (fieldArgs f0 /= fieldArgs f1 || fieldType f0 /= fieldType f1)
+
+validDefaultValues :: Visitor a
+validDefaultValues doc = do
   mapMOf_ (_docOperations . traverse . _opVariables . traverse) validation doc
   pure doc
   where
@@ -57,3 +63,4 @@ validateDefaultValues doc = do
               <> ", found "
               <> (LazyText.toStrict . JSON.encodeToLazyText . cata (JSON.toJSON . CofreeT.tailF) $ (pos:<val))
 
+test = () :< Node 1 [() :< InlineFragment "A" ((() :< Node 2 [() :< FragmentSpread "X", ():<Node 4 []]) :| [() :< Node 3 []])]
