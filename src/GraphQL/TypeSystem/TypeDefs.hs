@@ -187,7 +187,6 @@ class GraphQLResolver m a where
   type ResolverInput a :: *
   type ResolverOutput a :: *
   resolverFieldDef :: (ctx -> a) -> ResolverF m ctx (ResolverInput a) (ResolverOutput a)
--- (ctx -> m )
 
 instance
   ( GraphQLInput i
@@ -209,7 +208,7 @@ class
   fieldDef = mkResolver (description @m @a @sym) (resolver @m @a @sym)
   description :: Maybe Text
   description = Nothing
-  resolver :: (InputOf a sym) -> a -> m (OutputOf a sym)
+  resolver :: InputOf a sym -> a -> m (OutputOf a sym)
 
 mkResolver :: (GraphQLInput i, GraphQLOutputType m o) => Maybe Text -> (i -> a -> m o) -> ResolverF m a i o
 mkResolver desc = FieldDef desc . (Compose .)

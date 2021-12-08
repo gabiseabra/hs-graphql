@@ -155,7 +155,7 @@ data EnumValueDef
     }
 
 type ObjectDef :: (* -> *) -> * -> *
-data ObjectDef m a
+newtype ObjectDef m a
   = ObjectDef
     { objectFields :: Map Text (Resolver m a)
     }
@@ -166,7 +166,7 @@ data FieldDef t m i a where
     , GraphQLOutputType m a
     ) =>
     { fieldDescription :: Maybe Text
-    , fieldResolver :: (i -> t m a)
+    , fieldResolver :: i -> t m a
     } -> FieldDef t m i a
 
 data Some2 p where Some2 :: p a b -> Some2 p
@@ -174,7 +174,7 @@ data Some2 p where Some2 :: p a b -> Some2 p
 type ResolverF m a i o = FieldDef (Compose ((->) a)) m i o
 type Resolver m a = Some2 (FieldDef (Compose ((->) a)) m)
 
-data ProducerT a r m o = Producer { runProducer :: a -> (o -> m Response) -> m r }
+newtype ProducerT a r m o = Producer { runProducer :: a -> (o -> m Response) -> m r }
 type ProducerF m a r i o = FieldDef (ProducerT a r) m i o
 type Producer m a r = Some2 (FieldDef (ProducerT a r) m)
 
@@ -187,13 +187,13 @@ data InputObjectDef a where
     { decodeInputObject :: Rec r -> a
     } -> InputObjectDef a
 
-data InputValueDef a
+newtype InputValueDef a
   = InputValueDef
     { inputDescription :: Maybe Text
     }
 
 type UnionDef :: (* -> *) -> * -> *
-data UnionDef m a
+newtype UnionDef m a
   = UnionDef
     { unionTypes :: Map Typename (Case m a)
     }

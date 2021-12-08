@@ -89,23 +89,23 @@ type family StringOrListK a where
   StringOrListK String = "String"
   StringOrListK a      = "List"
 
-type List_GraphQLType :: Symbol -> * -> Constraint
-class List_GraphQLType sym a where
+type ListGraphQLType :: Symbol -> * -> Constraint
+class ListGraphQLType sym a where
   type LIST_KIND sym a :: TypeKind
-  list_typeDef :: TypeDef (LIST_KIND sym a) a
+  listTypeDef :: TypeDef (LIST_KIND sym a) a
 
-instance List_GraphQLType "String" String where
+instance ListGraphQLType "String" String where
   type LIST_KIND "String" String = SCALAR
-  list_typeDef = scalarDef "String"
+  listTypeDef = scalarDef "String"
 
-instance GraphQLType a => List_GraphQLType "List" [a] where
+instance GraphQLType a => ListGraphQLType "List" [a] where
   type LIST_KIND "List" [a] = LIST (KIND a)
-  list_typeDef = ListType "List" (typeDef @a) $ ListDef Vec.fromList (Just . Vec.toList)
+  listTypeDef = ListType "List" (typeDef @a) $ ListDef Vec.fromList (Just . Vec.toList)
 
 instance
   ( StringOrListK [a] ~ sym
   , KnownSymbol sym
-  , List_GraphQLType sym [a]
+  , ListGraphQLType sym [a]
   ) => GraphQLType [a] where
   type KIND [a] = LIST_KIND (StringOrListK [a]) [a]
-  typeDef = list_typeDef @sym @[a]
+  typeDef = listTypeDef @sym @[a]
