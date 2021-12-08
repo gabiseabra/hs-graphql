@@ -54,8 +54,6 @@ import Control.Arrow ((&&&))
 
 -- * Value node
 
-type a :+: b = Sum a b
-
 data ConstValueF r
   = NullVal
   | StrVal Text
@@ -341,3 +339,5 @@ type Tree a = Att (TreeF a)
 type Att f = Cofree f Pos
 
 type ExecutableOperation = Operation (Tree (Field JSON.Value))
+
+type a :+: b = Sum a b
