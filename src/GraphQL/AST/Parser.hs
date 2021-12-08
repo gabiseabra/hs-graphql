@@ -3,23 +3,40 @@
   , TupleSections
   , FlexibleContexts
   , TupleSections
+  , TypeOperators
 #-}
 
 module GraphQL.AST.Parser where
 
-import GHC.Generics ((:+:)(..))
-
 import GraphQL.AST.Document
-import GraphQL.AST.Validation
 import GraphQL.AST.Lexer (Parser, (<@>))
 import qualified GraphQL.AST.Lexer as L
 import GraphQL.Response (Pos)
+import qualified GraphQL.Response as E
 import GraphQL.TypeSystem.Main (OperationType(..))
 
-import Control.Arrow ((+++))
-import Control.Applicative ((<|>))
+import Control.Arrow ((+++), (&&&))
+import Control.Applicative ((<|>), liftA2)
 import Control.Comonad.Cofree (Cofree(..))
+import Control.Monad (join)
+import Control.Monad.Trans (lift)
 import Control.Monad.Combinators.NonEmpty (some)
+import qualified Data.Aeson as JSON
+import Data.Bitraversable (bisequence)
+import Data.Maybe (isJust, fromMaybe)
+import Data.Either (partitionEithers)
+import qualified Data.Vector as Vec
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
+import Data.Text (Text)
+import qualified Data.Text as Text
+import Data.Fix (Fix(..))
+import Data.Function (fix)
+import Data.Functor.Const (Const(..))
+import Data.Functor.Identity (Identity(..))
+import Data.Functor.Sum (Sum(..))
 import Text.Megaparsec
   ( label
   , try
@@ -32,19 +49,6 @@ import Text.Megaparsec
   , customFailure
   )
 import Text.Megaparsec.Char (string, char)
-import qualified Data.Aeson as JSON
-import Data.Bitraversable (bisequence)
-import Data.Maybe (isJust, fromMaybe)
-import Data.Either (partitionEithers)
-import qualified Data.Vector as Vec
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
-import Data.Text (Text)
-import Data.HashMap.Strict (HashMap)
-import qualified Data.Text as Text
-import Data.Fix (Fix(..))
-import Data.Function (fix)
-import Data.Functor.Const (Const(..))
 
 operationTypeP :: Parser OperationType
 operationTypeP = label "OperationType" $ option QUERY $ try $ choice
@@ -84,8 +88,8 @@ constValueP = fix (constValueFP . flip (<@>) (:<)) <@> (:<)
 
 valueP :: Parser Value
 valueP = label "Value" $ choice
-  [ L1 . Const <$> L.varName
-  , R1         <$> constValueFP valueP
+  [ InL . Const <$> L.varName
+  , InR         <$> constValueFP valueP
   ] <@> (:<)
 
 varsP :: Parser (HashMap Name Variable)
@@ -164,6 +168,35 @@ documentP = label "Document" $ L.sc *> nodes <* L.sc <* eof
   where
     nodes = validateDocumentP =<< L.foldE p mempty
     p ab  = appendEither ab <$> eitherP fragmentP operationP
+
+-- Validates a document's immediate children
+validateDocumentP :: ([Fragment a], [Operation a]) -> Parser (Document a)
+validateDocumentP (frags, ops) = Document <$> validateFragmentsP frags <*> validateOperationsP ops
+
+-- Validates that each document either has only one operation or all named operations
+validateOperationsP :: [Operation a] -> Parser ((Identity :+: HashMap Name) (Operation a))
+validateOperationsP [] = parseErrorP [] "Expected at least one root operation, found none"
+validateOperationsP [op] = pure $ InL $ pure op
+validateOperationsP ops = InR <$> (sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) =<< mapM go ops)
+  where
+    go op | Just name <- opName op = pure (name, pure op)
+          | otherwise = validationErrorP [opPos op] "Unnamed operation in document with multiple operations"
+    onDupe k op0 op1 = validationErrorP [opPos op0, opPos op1] $ "Duplicated operation name " <> k
+
+-- Validates that fragment names are unique
+validateFragmentsP :: [Fragment a] -> Parser (HashMap Name (Fragment a))
+validateFragmentsP = sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) . fmap (fragName &&& pure)
+  where
+    onDupe k frag0 frag1 = validationErrorP [fragPos frag0, fragPos frag1] $ "Duplicated fragment name " <> k
+
+parseErrorP :: [Pos] -> Text -> Parser a
+parseErrorP pos msg = customFailure $ E.ParseError pos msg
+
+validationErrorP :: [Pos] -> Text -> Parser a
+validationErrorP pos msg = customFailure $ E.ValidationError pos msg
+
+liftJoin2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
+liftJoin2 f ma mb = join (liftA2 f ma mb)
 
 appendEither :: ([a], [b]) -> Either a b -> ([a], [b])
 appendEither (as, bs) (Right b) = (as, b:bs)

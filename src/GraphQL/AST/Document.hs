@@ -20,7 +20,7 @@ import GraphQL.TypeSystem.Main (OperationType(..))
 import GraphQL.Response (Pos)
 import GraphQL.Internal
 
-import GHC.Generics ((:+:), Generic1)
+import GHC.Generics (Generic1)
 
 import Control.Comonad.Cofree (Cofree(..), hoistCofree)
 import qualified Data.Aeson as JSON
@@ -46,12 +46,15 @@ import Data.Functor.Identity (Identity(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Classes (Show1(..), Eq1(..), showsUnaryWith, showsPrec1, eq1)
+import Data.Functor.Sum (Sum(..))
 import Control.Lens (Lens, Lens', Traversal', Traversal, lens, (<&>))
 import Control.Lens.Traversal (IndexedTraversal)
 import Control.Lens.Indexed (Indexable(..), itraverse)
 import Control.Arrow ((&&&))
 
 -- * Value node
+
+type a :+: b = Sum a b
 
 data ConstValueF r
   = NullVal
