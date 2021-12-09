@@ -16,6 +16,7 @@ import Test.Utils
 import GHC.Generics (Generic)
 
 import GraphQL.TypeSystem
+import qualified GraphQL.TypeSystem.X as X
 import GraphQL.Types
 
 import Control.Monad ((<=<))
@@ -67,7 +68,7 @@ instance GraphQLType B where
 b = B 420 (Just "eyy") :: B
 
 
-data C = C { c0 :: Int } deriving (Generic)
+newtype C = C { c0 :: Int } deriving (Generic)
 
 instance GraphQLType C where
   type KIND C = OBJECT @IO
@@ -131,6 +132,8 @@ objectSpec = describe "objectDef" $ do
           , "c0" .= (420 :: Int)
           ]
     exec s c `shouldReturn` o
+  -- it "x" $ do
+  --   let Just (Some2 (ScalarDef {} :: TypeDef k a)) = X.lookupField (typeDef @(A IO)) ["a1"]
 
 validationSpec :: Spec
 validationSpec = describe "validation" $ do

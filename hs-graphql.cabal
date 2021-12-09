@@ -23,6 +23,7 @@ library
     GraphQL.TypeSystem
     GraphQL.TypeSystem.Main
     GraphQL.TypeSystem.TypeDefs
+    GraphQL.TypeSystem.X
     GraphQL.IO.Input
     GraphQL.IO.Output
     GraphQL.AST

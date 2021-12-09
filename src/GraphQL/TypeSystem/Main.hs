@@ -171,6 +171,9 @@ data FieldDef t m i a where
 
 data Some2 p where Some2 :: p a b -> Some2 p
 
+runSome2 :: (forall a b. p a b -> r) -> Some2 p -> r
+runSome2 f (Some2 p) = f p
+
 type ResolverF m a i o = FieldDef (Compose ((->) a)) m i o
 type Resolver m a = Some2 (FieldDef (Compose ((->) a)) m)
 
