@@ -269,6 +269,7 @@ instance Eq1 Operation where
   liftEq f (Query        pos name vars as) (Query        pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
   liftEq f (Mutation     pos name vars as) (Mutation     pos' name' vars' bs) = pos == pos' && name == name' && vars == vars && liftEq f as bs
   liftEq f (Subscription pos name vars a ) (Subscription pos' name' vars' b ) = pos == pos' && name == name' && vars == vars && liftEq f (Identity a) (Identity b)
+  liftEq _ _ _ = False
 
 instance Show1 Operation where
   liftShowsPrec sp sl d (Query pos name vars as)
@@ -338,6 +339,8 @@ type Tree a = Att (TreeF a)
 
 type Att f = Cofree f Pos
 
-type ExecutableOperation = Operation (Tree (Field JSON.Value))
+type ExecutableSelection = Tree (Field JSON.Value)
+
+type ExecutableOperation = Operation ExecutableSelection
 
 type a :+: b = Sum a b

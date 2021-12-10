@@ -19,7 +19,6 @@ library
     GraphQL.Response
     GraphQL.Internal
     GraphQL.Types
-    GraphQL.Selection
     GraphQL.TypeSystem
     GraphQL.TypeSystem.Main
     GraphQL.TypeSystem.TypeDefs

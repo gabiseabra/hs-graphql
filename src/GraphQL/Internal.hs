@@ -10,13 +10,11 @@
 #-}
 
 module GraphQL.Internal
-  ( V
-  , mapRow
+  ( mapRow
   , recordAccessors
   , variantCases
   , eraseWithLabelsF
   , eraseF
-  , liftJSONResult
   , hoistCofreeM
   ) where
 
@@ -36,8 +34,6 @@ import qualified Data.Text as Text
 import Data.String (IsString)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Identity (Identity(..))
-
-type V a = Either Text a
 
 mapRow :: forall c r b
   .  Row.Forall r c
@@ -77,7 +73,7 @@ variantCases
   $ VC0 (Just . Var.fromNative)
   where
     empty _ = VC1 Rec.empty
-    uncons l (VC0 f) = (VC0 $ (>>= restrict l) . f, Compose $ (>>= Var.view l) . f)
+    uncons l (VC0 f) = (VC0 $ restrict l <=< f, Compose $ Var.view l <=< f)
     cons :: forall l b r
       .  Row.KnownSymbol l
       => Row.Label l
@@ -110,10 +106,6 @@ eraseF f
   = getConst
   . Rec.sequence' @(Const [b]) @r @c
   . Rec.transform @c @r @f @(Const [b]) (Const . pure . f)
-
-liftJSONResult :: JSON.Result a -> V a
-liftJSONResult (JSON.Error e) = Left $ Text.pack e
-liftJSONResult (JSON.Success a) = Right a
 
 hoistCofreeM :: (Traversable f, Monad m) => (forall x . f x -> m (g x)) -> Cofree f a -> m (Cofree g a)
 hoistCofreeM f (x:<y) = (x:<) <$> (f =<< traverse (hoistCofreeM f) y)

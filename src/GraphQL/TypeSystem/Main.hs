@@ -91,8 +91,8 @@ instance (GraphQLType a, KIND a !>> OUT, KIND a !! m) => GraphQLOutputType m a
 class (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
 instance (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
 
-class (GraphQLType a, KIND a ~ ROOT @op @m @r) => GraphQLRootType op m r a
-instance (GraphQLType a, KIND a ~ ROOT @op @m @r) => GraphQLRootType op m r a
+class (GraphQLType a, KIND a ~ ROOT @op @m @r, KIND a !! m) => GraphQLRootType op m r a
+instance (GraphQLType a, KIND a ~ ROOT @op @m @r, KIND a !! m) => GraphQLRootType op m r a
 
 class GraphQLInput a where
   inputDef :: InputDef a
