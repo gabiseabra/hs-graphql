@@ -9,26 +9,24 @@
 
 module Examples.UnionSpec where
 
-import Test.Hspec
-import Test.Utils
-
-import GHC.Generics (Generic)
-
-import GraphQL.TypeSystem
-import GraphQL.Types
-
-import Control.Monad ((<=<))
-import Data.Aeson ((.=), object)
+import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import Data.Text (Text)
+import           Data.Aeson ((.=), object)
+import           Data.Text (Text)
+import           GHC.Generics (Generic)
+import qualified GraphQL.Response as E
+import           GraphQL.TypeSystem
+import           GraphQL.Types
+import           Test.Hspec
+import           Test.Utils
 
-data A m = A { a0 :: () -> m Int } deriving (Generic)
+newtype A m = A { a0 :: () -> m Int } deriving (Generic)
 
 instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 
-data B m = B { b0 :: () -> m Int } deriving (Generic)
+newtype B m = B { b0 :: () -> m Int } deriving (Generic)
 
 instance (Applicative m) => GraphQLType (B m) where
   type KIND (B m) = OBJECT @m
@@ -68,13 +66,13 @@ unionSpec = describe "unionDef" $ do
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection" $ do
-    eval @(AB IO) [] `shouldBe` Left "Union type AB must have a selection"
+    eval @(AB IO) [] `shouldBe` E.validationError [] "Union type AB must have a selection"
   it "fails with invalid typename" $ do
     let s = [ sel_ "x" `on` "X" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "X is not a possible type of union type AB"
+    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "X is not a possible type of union type AB"
   it "fails with unspecified typename" $ do
     let s = [ sel_ "a0" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Invalid selection with unspecified typename on union type AB"
+    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "Invalid selection with unspecified typename on union type AB"
   it "fails with invalid selection on possible type" $ do
     let s = [ sel_ "a1" `on` "A" &: [] ]
-    eval @(AB IO) s `shouldBe` Left "Field a1 does not exist in object of type A"
+    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "Field a1 does not exist in object of type A"

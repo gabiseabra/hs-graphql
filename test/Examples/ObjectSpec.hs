@@ -10,20 +10,18 @@
 
 module Examples.ObjectSpec where
 
-import Test.Hspec
-import Test.Utils
-
-import GHC.Generics (Generic)
-
-import GraphQL.TypeSystem
-import GraphQL.Types
-
-import Control.Monad ((<=<))
-import Data.Aeson ((.=), object)
+import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import Data.Text (Text)
+import           Data.Aeson ((.=), object)
+import           Data.Proxy (Proxy(..))
 import qualified Data.Text as Text
-import Data.Proxy (Proxy(..))
+import           Data.Text (Text)
+import           GHC.Generics (Generic)
+import qualified GraphQL.Response as E
+import           GraphQL.TypeSystem
+import           GraphQL.Types
+import           Test.Hspec
+import           Test.Utils
 
 data A m
   = A
@@ -66,8 +64,7 @@ instance GraphQLType B where
 
 b = B 420 (Just "eyy") :: B
 
-
-data C = C { c0 :: Int } deriving (Generic)
+newtype C = C { c0 :: Int } deriving (Generic)
 
 instance GraphQLType C where
   type KIND C = OBJECT @IO
@@ -135,21 +132,21 @@ objectSpec = describe "objectDef" $ do
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection on objects" $ do
-    eval @(A IO) [] `shouldBe` Left "Object type A must have a selection"
+    eval @(A IO) [] `shouldBe` E.validationError [] "Object type A must have a selection"
   it "fails with non-empty selection on scalars" $ do
     let s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Scalar type Int cannot have a selection"
+    eval @(A IO) s `shouldBe` E.validationError [] "Scalar type Int cannot have a selection"
   it "fails with mismatched typename" $ do
     let s = [ sel_ "a0" `on` "X" &: [] ]
-    eval @(A IO) s `shouldBe` Left "Typename mismatch: Expected A, got X"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Typename mismatch: Expected A, got X"
   it "fails invalid selection" $ do
     let s = [ sel_ "x" &: [] ]
-    eval @(A IO) s `shouldBe` Left "Field x does not exist in object of type A"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Field x does not exist in object of type A"
   it "fails with non-empty selection on __typename" $ do
     let s = [ sel_ "__typename" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Field __typename cannot have a selection"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Field __typename cannot have a selection"
   it "fails with non-empty input on __typename" $ do
     let
       i = object [ "a" .= True ]
       s = [ sel "__typename" i &: [] ]
-    eval @(A IO) s `shouldBe` Left "Field __typename does not have arguments"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Field __typename does not have arguments"

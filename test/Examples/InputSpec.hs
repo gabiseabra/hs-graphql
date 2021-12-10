@@ -11,19 +11,17 @@
 
 module Examples.InputSpec where
 
-import Test.Hspec
-import Test.Utils
-
-import GHC.Generics (Generic)
-
-import GraphQL.TypeSystem
-import GraphQL.Types
-
-import Control.Monad ((<=<))
-import Data.Aeson ((.=), object)
-import Data.Maybe (fromMaybe)
+import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import Data.Text (Text)
+import           Data.Aeson ((.=), object)
+import           Data.Maybe (fromMaybe)
+import           Data.Text (Text)
+import           GHC.Generics (Generic)
+import qualified GraphQL.Response as E
+import           GraphQL.TypeSystem
+import           GraphQL.Types
+import           Test.Hspec
+import           Test.Utils
 
 data AnInputObject
   = AnInputObject
@@ -110,7 +108,7 @@ validationSpec = describe "inputObjectDef" $ do
     let
       i = object [ "i1_0" .= ("lmao" :: String) ]
       s = [ sel "a3" i &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Failed to read Int. Unexpected String"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Failed to read Int. Unexpected String"
   it "fails with missing input fields" $ do
     let s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` Left "Failed to read Int. Unexpected Null"
+    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Failed to read Int. Unexpected Null"
