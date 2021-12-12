@@ -1,40 +1,38 @@
-{-# LANGUAGE
-    DataKinds
-  , GADTs
-  , TypeFamilies
-  , FlexibleContexts
-  , ConstraintKinds
-  , MultiParamTypeClasses
-  , TypeOperators
-  , RankNTypes
-  , DefaultSignatures
-  , AllowAmbiguousTypes
-  , TypeApplications
-  , ScopedTypeVariables
-  , StandaloneKindSignatures
-  , FlexibleInstances
-  , UndecidableInstances
-  , PolyKinds
-#-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DefaultSignatures        #-}
+{-# LANGUAGE DeriveFunctor            #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE ViewPatterns             #-}
 
 module GraphQL.TypeSystem.Main where
 
-import GraphQL.Internal
-import GraphQL.Response
-
-import GHC.Exts (Constraint)
-
+import           Control.Arrow (Kleisli)
+import           Control.Lens (Lens', (<&>))
 import qualified Data.Aeson as JSON
-import Data.List.NonEmpty (NonEmpty)
-import Data.Vector (Vector)
-import Data.Row (Row, Rec)
+import           Data.Functor.Identity (Identity)
+import           Data.Map.Strict (Map)
 import qualified Data.Row as Row
+import           Data.Row (Row, Rec, Var)
 import qualified Data.Row.Records as Rec
-import Data.Map.Strict (Map)
-import Data.Text (Text)
-import Data.Proxy (Proxy)
-import Data.Functor.Compose (Compose)
-import Data.Profunctor.Cayley (Cayley)
+import           Data.Text (Text)
+import           GHC.Base (Alternative)
+import           GHC.Exts (Constraint)
+import           GraphQL.Internal
+import           GraphQL.Response
 
 type Typename = Text
 
@@ -45,14 +43,13 @@ data OperationType
   deriving (Eq, Show)
 
 data TypeKind where
-  SCALAR       ::                                                TypeKind
-  ENUM         ::                                                TypeKind
-  INPUT_OBJECT ::                                                TypeKind
-  OBJECT       :: forall (m :: * -> *)                         . TypeKind
-  UNION        :: forall (m :: * -> *)                         . TypeKind
-  LIST         :: TypeKind                                    -> TypeKind
-  NULLABLE     :: TypeKind                                    -> TypeKind
-  ROOT         :: forall (op :: OperationType) (m :: * -> *) r . TypeKind
+  SCALAR       ::                         TypeKind
+  ENUM         ::                         TypeKind
+  INPUT_OBJECT ::                         TypeKind
+  OBJECT       :: forall (m :: * -> *)  . TypeKind
+  UNION        :: forall (m :: * -> *)  . TypeKind
+  LIST         :: TypeKind             -> TypeKind
+  NULLABLE     :: TypeKind             -> TypeKind
 
 data TypeIO = IN | OUT
 
@@ -73,7 +70,6 @@ type family k || m where
   INPUT_OBJECT  || m = m
   UNION   @m    || _ = m
   OBJECT  @m    || _ = m
-  ROOT @_ @m @_ || _ = m
   (k' k)        || m = k || m
 
 type k !! m = k || m ~ m
@@ -91,9 +87,6 @@ instance (GraphQLType a, KIND a !>> OUT, KIND a !! m) => GraphQLOutputType m a
 class (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
 instance (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
 
-class (GraphQLType a, KIND a ~ ROOT @op @m @r, KIND a !! m) => GraphQLRootType op m r a
-instance (GraphQLType a, KIND a ~ ROOT @op @m @r, KIND a !! m) => GraphQLRootType op m r a
-
 class GraphQLInput a where
   inputDef :: InputDef a
   default inputDef
@@ -102,125 +95,138 @@ class GraphQLInput a where
     => Row.Forall (Rec.NativeRow a) GraphQLInputType
     => Row.FreeForall (Rec.NativeRow a)
     => InputDef a
-  inputDef = InputFields $ InputObjectDef Rec.toNative
+  inputDef = InputFields Rec.toNative
 
 instance GraphQLInput () where inputDef = EmptyFields ()
 
 data InputDef a where
   EmptyFields :: a -> InputDef a
-  InputFields :: InputObjectDef a -> InputDef a
+  InputFields ::
+    ( Row.Forall r GraphQLInputType
+    , Row.AllUniqueLabels r
+    ) => (Rec r -> a)
+      -> InputDef a
 
 -- * Type definitions & schema introspection
 
 type TypeDef :: TypeKind -> * -> *
 data TypeDef k a where
-  ScalarType      :: Typename -> Maybe Text  -> ScalarDef        a -> TypeDef SCALAR       a
-  EnumType        :: Typename -> Maybe Text  -> EnumDef          a -> TypeDef ENUM         a
-  InputObjectType :: Typename -> Maybe Text  -> InputObjectDef   a -> TypeDef INPUT_OBJECT a
-  ObjectType      :: Typename -> Maybe Text  -> ObjectDef      m a -> TypeDef (OBJECT @m)  a
-  UnionType       :: Typename -> Maybe Text  -> UnionDef       m a -> TypeDef (UNION @m)   a
-  ListType        :: Typename -> TypeDef k a -> ListDef          f -> TypeDef (LIST k)     (f a)
-  NullableType    :: Typename -> TypeDef k a -> NullableDef      f -> TypeDef (NULLABLE k) (f a)
-  RootType        :: Typename -> RootDef op m a r                  -> TypeDef (ROOT @op @m @r) a
-
-typename :: TypeDef k a -> Typename
-typename (ScalarType      ty _ _) = ty
-typename (EnumType        ty _ _) = ty
-typename (ObjectType      ty _ _) = ty
-typename (InputObjectType ty _ _) = ty
-typename (UnionType       ty _ _) = ty
-typename (ListType        ty _ _) = ty
-typename (NullableType    ty _ _) = ty
-typename (RootType        ty _  ) = ty
-
-type ScalarDef :: * -> *
-data ScalarDef a
-  = ScalarDef
-    { encodeScalar :: a -> JSON.Value
-    , decodeScalar :: JSON.Value -> Maybe a
-    }
-
-type EnumDef :: * -> *
-data EnumDef a
-  = EnumDef
-    { enumValues :: NonEmpty EnumValueDef
-    , encodeEnum :: a -> Text
-    , decodeEnum :: Text -> Maybe a
-    }
-
-data EnumValueDef
-  = EnumValueDef
-    { value            :: Text
-    , valueDescription :: Maybe Text
-    }
-
-type ObjectDef :: (* -> *) -> * -> *
-newtype ObjectDef m a
-  = ObjectDef
-    { objectFields :: Map Text (Resolver m a)
-    }
-
-data FieldDef t m i a where
-  FieldDef ::
-    ( GraphQLInput i
-    , GraphQLOutputType m a
+  ScalarType ::
+    ( JSON.ToJSON a
+    , JSON.FromJSON a
     ) =>
-    { fieldDescription :: Maybe Text
-    , fieldResolver :: i -> t m a
-    } -> FieldDef t m i a
-
-data Some2 p where Some2 :: p a b -> Some2 p
-
-type ResolverF m a i o = FieldDef (Compose ((->) a)) m i o
-type Resolver m a = Some2 (FieldDef (Compose ((->) a)) m)
-
-newtype ProducerT a r m o = Producer { runProducer :: a -> (o -> m Response) -> m r }
-type ProducerF m a r i o = FieldDef (ProducerT a r) m i o
-type Producer m a r = Some2 (FieldDef (ProducerT a r) m)
-
-type InputObjectDef :: * -> *
-data InputObjectDef a where
-  InputObjectDef ::
+    { scalarTypename :: Typename
+    , scalarDescription :: Maybe Text
+    } -> TypeDef SCALAR a
+  EnumType ::
+    { enumTypename :: Typename
+    , enumDescription :: Maybe Text
+    , enumValues :: Map Text (EnumValue a)
+    } -> TypeDef ENUM a
+  InputObjectType ::
     ( Row.Forall r GraphQLInputType
     , Row.AllUniqueLabels r
     ) =>
-    { decodeInputObject :: Rec r -> a
-    } -> InputObjectDef a
-
-newtype InputValueDef a
-  = InputValueDef
-    { inputDescription :: Maybe Text
-    }
-
-type UnionDef :: (* -> *) -> * -> *
-newtype UnionDef m a
-  = UnionDef
-    { unionTypes :: Map Typename (Case m a)
-    }
-
-data Case m a where Case :: GraphQLObjectType m b => (a -> Maybe b) -> Case m a
-
-type ListDef :: (* -> *) -> *
-data ListDef f where
-  ListDef ::
-    ( Traversable f
+    { inputObjectTypename :: Typename
+    , inputObjectDescription :: Maybe Text
+    , decodeInputObject :: Rec r -> a
+    } -> TypeDef INPUT_OBJECT a
+  ObjectType ::
+    { objectTypename :: Typename
+    , objectDescription :: Maybe Text
+    , objectFields :: Map Text (Resolver m a)
+    } -> TypeDef (OBJECT @m) a
+  UnionType ::
+    ( Row.Forall r (GraphQLObjectType m)
+    , Row.AllUniqueLabels r
     ) =>
-    { encodeList :: forall a. f a -> Vector a
-    , decodeList :: forall a. Vector a -> Maybe (f a)
-    } -> ListDef f
-
-type NullableDef :: (* -> *) -> *
-data NullableDef f where
-  NullableDef ::
-    ( Traversable f
+    { unionTypename :: Typename
+    , unionDescription :: Maybe Text
+    , unionFields :: a -> Var r
+    } -> TypeDef (UNION @m) a
+  ListType ::
+    ( JSON.ToJSON1 f
+    , JSON.FromJSON1 f
+    , Traversable f
     ) =>
-    { encodeNullable :: forall a. f a -> Maybe a
-    , decodeNullable :: forall a. Maybe a -> f a
-    } -> NullableDef f
+    { listTypename :: Typename
+    , listDescription :: Maybe Text
+    , listInnerType :: TypeDef k a
+    } -> TypeDef (LIST k) (f a)
+  NullableType ::
+    ( JSON.ToJSON1 f
+    , JSON.FromJSON1 f
+    , Alternative f
+    ) =>
+    { nullableTypename :: Typename
+    , nullableDescription :: Maybe Text
+    , nullableInnerType :: TypeDef k a
+    } -> TypeDef (NULLABLE k) (f a)
 
-type RootDef :: OperationType -> (* -> *) -> * -> * -> *
-data RootDef op m a r where
-  QueryDef        :: (Response -> m r) -> Map Text (Resolver m a  ) -> RootDef QUERY        m a r
-  MutationDef     :: (Response -> m r) -> Map Text (Resolver m a  ) -> RootDef MUTATION     m a r
-  SubscriptionDef ::                      Map Text (Producer m a r) -> RootDef SUBSCRIPTION m a r
-  UndefinedDef    ::                                                   RootDef op           m a r
+_typename :: Lens' (TypeDef k a) Typename
+_typename f t = f (get t) <&> set t
+  where
+    get :: TypeDef k a -> Typename
+    get ScalarType {..} = scalarTypename
+    get EnumType {..} = enumTypename
+    get ObjectType {..} = objectTypename
+    get InputObjectType {..} = inputObjectTypename
+    get UnionType {..} = unionTypename
+    get ListType {..} = listTypename
+    get NullableType {..} = nullableTypename
+
+    set :: TypeDef k a -> Typename -> TypeDef k a
+    set def@ScalarType {..} a = def {scalarTypename = a}
+    set def@EnumType {..} a = def {enumTypename = a}
+    set def@ObjectType {..} a = def {objectTypename = a}
+    set def@InputObjectType {..} a = def {inputObjectTypename = a}
+    set def@UnionType {..} a = def {unionTypename = a}
+    set def@ListType {..} a = def {listTypename = a}
+    set def@NullableType {..} a = def {nullableTypename = a}
+
+_description :: Lens' (TypeDef k a) (Maybe Text)
+_description f t = f (get t) <&> set t
+  where
+    get :: TypeDef k a -> Maybe Text
+    get ScalarType {..} = scalarDescription
+    get EnumType {..} = enumDescription
+    get InputObjectType {..} = inputObjectDescription
+    get ObjectType {..} = objectDescription
+    get UnionType {..} = unionDescription
+    get ListType {..} = listDescription
+    get NullableType {..} = nullableDescription
+
+    set :: TypeDef k a -> Maybe Text -> TypeDef k a
+    set def@ScalarType {..} a = def {scalarDescription = a}
+    set def@EnumType {..} a = def {enumDescription = a}
+    set def@InputObjectType {..} a = def {inputObjectDescription = a}
+    set def@ObjectType {..} a = def {objectDescription = a}
+    set def@UnionType {..} a = def {unionDescription = a}
+    set def@ListType {..} a = def {listDescription = a}
+    set def@NullableType {..} a = def {nullableDescription = a}
+
+kindOf :: forall k a. TypeDef k a -> TypeKind
+kindOf ScalarType{} = SCALAR
+kindOf EnumType{} = ENUM
+kindOf InputObjectType{} = INPUT_OBJECT
+kindOf ObjectType{} = OBJECT @(k || Identity)
+kindOf UnionType{} = UNION @(k || Identity)
+kindOf ListType{..} = LIST (kindOf listInnerType)
+kindOf NullableType{..} = NULLABLE (kindOf nullableInnerType)
+
+pattern OfKind :: TypeKind -> TypeDef k a
+pattern OfKind {k} <- (kindOf -> k)
+
+data EnumValue a
+  = EnumValue
+    { valueDescription :: Maybe Text
+    , value :: a
+    } deriving (Functor)
+
+data Field f i a
+  = Field
+    { fieldDescription :: Maybe Text
+    , fieldResolver :: i -> f a
+    } deriving (Functor)
+
+type Resolver m a = Exists2 (Field (Kleisli m a)) GraphQLInput (GraphQLOutputType m)

@@ -1,13 +1,11 @@
-{-# LANGUAGE
-    TypeApplications
-  , TypeFamilies
-  , ScopedTypeVariables
-  , AllowAmbiguousTypes
-  , ConstraintKinds
-  , RankNTypes
-  , FlexibleContexts
-  , TypeOperators
-#-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module GraphQL.Internal
   ( mapRow
@@ -16,24 +14,26 @@ module GraphQL.Internal
   , eraseWithLabelsF
   , eraseF
   , hoistCofreeM
+  , Exists(..)
+  , Exists1(..)
+  , Exists2(..)
   ) where
 
-import Control.Comonad.Cofree
-import Control.Monad ((<=<))
+import           Control.Arrow (Kleisli(..))
+import           Control.Comonad.Cofree (Cofree(..))
+import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
-import Data.Functor.Const (Const(..))
-import Data.Proxy (Proxy(..))
-import Data.Row (Rec, Var, type (.-))
-import Data.Row.Dictionaries ((\\), mapExtendSwap)
+import           Data.Functor.Const (Const(..))
+import           Data.Proxy (Proxy(..))
 import qualified Data.Row as Row
+import           Data.Row (Rec, Var, type (.-))
+import           Data.Row.Dictionaries ((\\), mapExtendSwap)
 import qualified Data.Row.Internal as Row (metamorph)
 import qualified Data.Row.Records as Rec
 import qualified Data.Row.Variants as Var
-import Data.Text (Text)
+import           Data.String (IsString)
 import qualified Data.Text as Text
-import Data.String (IsString)
-import Data.Functor.Compose (Compose(..))
-import Data.Functor.Identity (Identity(..))
+import           Data.Text (Text)
 
 mapRow :: forall c r b
   .  Row.Forall r c
@@ -52,13 +52,13 @@ recordAccessors :: forall a
 recordAccessors = Rec.distribute (Rec.fromNative @a)
 
 newtype VC0 a r = VC0 { unVC0 :: a -> Maybe (Var r) }
-newtype VC1 a r = VC1 { unVC1 :: Rec (Rec.Map (Compose ((->) a) Maybe) r) }
+newtype VC1 a r = VC1 { unVC1 :: Rec (Rec.Map (Kleisli Maybe a) r) }
 
 variantCases :: forall c a
   .  Var.FromNative a
   => Var.AllUniqueLabels (Var.NativeRow a)
   => Row.Forall (Var.NativeRow a) c
-  => Rec (Rec.Map (Compose ((->) a) Maybe) (Var.NativeRow a))
+  => Rec (Rec.Map (Kleisli Maybe a) (Var.NativeRow a))
 variantCases
   = unVC1
   $ Row.metamorph
@@ -68,19 +68,19 @@ variantCases
     @(,)
     @(VC0 a)
     @(VC1 a)
-    @(Compose ((->) a) Maybe)
+    @(Kleisli Maybe a)
     Proxy empty uncons cons
   $ VC0 (Just . Var.fromNative)
   where
     empty _ = VC1 Rec.empty
-    uncons l (VC0 f) = (VC0 $ restrict l <=< f, Compose $ Var.view l <=< f)
+    uncons l (VC0 f) = (VC0 $ restrict l <=< f, Kleisli $ Var.view l <=< f)
     cons :: forall l b r
       .  Row.KnownSymbol l
       => Row.Label l
-      -> (VC1 a r, Compose ((->) a) Maybe b)
+      -> (VC1 a r, Kleisli Maybe a b)
       -> VC1 a (Rec.Extend l b r)
     cons l (VC1 r, c) = VC1 $ Rec.extend l c r
-      \\ mapExtendSwap @(Compose ((->) a) Maybe) @l @b @r
+      \\ mapExtendSwap @(Kleisli Maybe a) @l @b @r
 
 restrict :: forall r l. Row.KnownSymbol l => Row.Label l -> Var r -> Maybe (Var (r .- l))
 restrict l v = case Var.trial v l of
@@ -109,3 +109,9 @@ eraseF f
 
 hoistCofreeM :: (Traversable f, Monad m) => (forall x . f x -> m (g x)) -> Cofree f a -> m (Cofree g a)
 hoistCofreeM f (x:<y) = (x:<) <$> (f =<< traverse (hoistCofreeM f) y)
+
+data Exists c where Exists :: c a => a -> Exists c
+
+data Exists1 f c where Exists1 :: c a => f a -> Exists1 f c
+
+data Exists2 p c1 c2 where Exists2 :: (c1 a, c2 b) => p a b -> Exists2 p c1 c2
