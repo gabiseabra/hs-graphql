@@ -32,7 +32,7 @@ import           Data.Text (Text)
 import           GHC.Base (Alternative)
 import           GHC.Exts (Constraint)
 import           GraphQL.Internal
-import           GraphQL.Response
+import GraphQL.Response ()
 
 type Typename = Text
 
@@ -50,6 +50,15 @@ data TypeKind where
   UNION        :: forall (m :: * -> *)  . TypeKind
   LIST         :: TypeKind             -> TypeKind
   NULLABLE     :: TypeKind             -> TypeKind
+
+instance Show TypeKind where
+  show SCALAR = "Scalar"
+  show ENUM = "Enum"
+  show INPUT_OBJECT = "InputObject"
+  show OBJECT = "Object"
+  show UNION = "Union"
+  show (LIST k) = "List<" <> show k <> ">"
+  show (NULLABLE k) = "Nullable<" <> show k <> ">"
 
 data TypeIO = IN | OUT
 
@@ -109,6 +118,20 @@ data InputDef a where
 
 -- * Type definitions & schema introspection
 
+data EnumValue a
+  = EnumValue
+    { valueDescription :: Maybe Text
+    , value :: a
+    } deriving (Functor)
+
+data Field f i a
+  = Field
+    { fieldDescription :: Maybe Text
+    , fieldResolver :: i -> f a
+    } deriving (Functor)
+
+type Resolver m a = Exists2 (Field (Kleisli m a)) GraphQLInput (GraphQLOutputType m)
+
 type TypeDef :: TypeKind -> * -> *
 data TypeDef k a where
   ScalarType ::
@@ -156,6 +179,7 @@ data TypeDef k a where
   NullableType ::
     ( JSON.ToJSON1 f
     , JSON.FromJSON1 f
+    , Traversable f
     , Alternative f
     ) =>
     { nullableTypename :: Typename
@@ -216,17 +240,3 @@ kindOf NullableType{..} = NULLABLE (kindOf nullableInnerType)
 
 pattern OfKind :: TypeKind -> TypeDef k a
 pattern OfKind {k} <- (kindOf -> k)
-
-data EnumValue a
-  = EnumValue
-    { valueDescription :: Maybe Text
-    , value :: a
-    } deriving (Functor)
-
-data Field f i a
-  = Field
-    { fieldDescription :: Maybe Text
-    , fieldResolver :: i -> f a
-    } deriving (Functor)
-
-type Resolver m a = Exists2 (Field (Kleisli m a)) GraphQLInput (GraphQLOutputType m)
