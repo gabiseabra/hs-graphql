@@ -16,7 +16,7 @@
 module GraphQL.TypeSystem.TypeDefs where
 
 import           Control.Applicative (Alternative(..))
-import           Control.Arrow (Kleisli(..))
+import           Control.Arrow (Kleisli(..), (&&&))
 import qualified Data.Aeson as JSON
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
@@ -33,6 +33,7 @@ import           GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import           GraphQL.Internal
 import           GraphQL.Response (Response)
 import           GraphQL.TypeSystem.Main
+import Control.Lens (view)
 
 scalarDef :: forall a
   .  JSON.FromJSON a
@@ -46,19 +47,29 @@ enumDef :: forall a
   => GraphQLEnumG (GR.Rep a)
   => Typename
   -> TypeDef ENUM a
-enumDef ty = EnumType ty Nothing $ Map.fromList ((fmap . fmap . fmap) GR.to . mkEnumValues $ Proxy @(GR.Rep a))
+enumDef ty = EnumType ty Nothing enumValues encodeEnum
+  where
+    enumValues = Map.fromList . (fmap . fmap . fmap) GR.to . enumValues' $ Proxy @(GR.Rep a)
+    encodeEnum = encodeEnum' . GR.from
 
 type GraphQLEnumG :: (* -> *) -> Constraint
 class GraphQLEnumG f where
-  mkEnumValues :: proxy f -> [(Text, EnumValue (f a))]
+  enumValues' :: proxy f -> [(Text, EnumValue (f a))]
+  encodeEnum' :: f a -> Text
 
 instance GraphQLEnumG cons => GraphQLEnumG (GR.D1 meta cons) where
-  mkEnumValues _ = (fmap . fmap) GR.M1 <$> mkEnumValues (Proxy @cons)
+  enumValues' _ = (fmap . fmap) GR.M1 <$> enumValues' (Proxy @cons)
+  encodeEnum' = encodeEnum' . GR.unM1
 instance (GraphQLEnumG l, GraphQLEnumG r) => GraphQLEnumG (l GR.:+: r) where
-  mkEnumValues _ = (fmap . fmap . fmap) GR.L1 (mkEnumValues (Proxy @l)) <> (fmap . fmap . fmap) GR.R1 (mkEnumValues (Proxy @r))
+  enumValues' _ = (fmap . fmap . fmap) GR.L1 (enumValues' (Proxy @l)) <> (fmap . fmap . fmap) GR.R1 (enumValues' (Proxy @r))
+  encodeEnum' (GR.R1 a) = encodeEnum' a
+  encodeEnum' (GR.L1 a) = encodeEnum' a
 instance KnownSymbol sym => GraphQLEnumG (GR.C1 (GR.MetaCons sym f 'False) GR.U1) where
-  mkEnumValues a = pure (lbl, EnumValue mempty empty)
-    where lbl = Text.toUpper $ Text.pack $ symbolVal $ Proxy @sym
+  enumValues' a = pure (enumLabel @sym, EnumValue mempty empty)
+  encodeEnum' _ = enumLabel @sym
+
+enumLabel :: forall sym. KnownSymbol sym => Text
+enumLabel = Text.toUpper . Text.pack . symbolVal $ Proxy @sym
 
 inputObjectDef :: forall a
   .  Rec.ToNative a
@@ -74,7 +85,16 @@ unionDef :: forall a m
   => Row.Forall (Var.NativeRow a) (GraphQLObjectType m)
   => Typename
   -> TypeDef (UNION @m) a
-unionDef ty = UnionType ty Nothing Var.fromNative
+unionDef ty
+  = UnionType ty Nothing
+  $ Map.fromList
+  $ eraseF
+    @(GraphQLObjectType m) @(Kleisli Maybe a) @(Var.NativeRow a)
+    go
+  $ variantCases @(GraphQLObjectType m) @a
+  where
+    go :: forall b. GraphQLObjectType m b => Kleisli Maybe a b -> (Text, Variant m a)
+    go = const (view _typename (typeDef @b)) &&& Exists1
 
 -- * Object types
 

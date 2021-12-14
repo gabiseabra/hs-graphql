@@ -50,6 +50,8 @@ library
     , microlens
     , lens
     , comonad
+    , bifunctors
+    , hashable
 
 test-suite hs-graphql-test
   default-language:    Haskell2010
