@@ -175,25 +175,19 @@ validateDocumentP (frags, ops) = Document <$> validateFragmentsP frags <*> valid
 
 -- Validates that each document either has only one operation or all named operations
 validateOperationsP :: [Operation a] -> Parser ((Identity :+: HashMap Name) (Operation a))
-validateOperationsP [] = parseErrorP [] "Expected at least one root operation, found none"
+validateOperationsP [] = L.syntaxErrorP [] "Expected at least one root operation, found none"
 validateOperationsP [op] = pure $ InL $ pure op
 validateOperationsP ops = InR <$> (sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) =<< mapM go ops)
   where
     go op | Just name <- opName op = pure (name, pure op)
-          | otherwise = validationErrorP [opPos op] "Unnamed operation in document with multiple operations"
-    onDupe k op0 op1 = validationErrorP [opPos op0, opPos op1] $ "Duplicated operation name " <> k
+          | otherwise = L.validationErrorP [opPos op] "Unnamed operation in document with multiple operations"
+    onDupe k op0 op1 = L.validationErrorP [opPos op0, opPos op1] $ "Duplicated operation name " <> k
 
 -- Validates that fragment names are unique
 validateFragmentsP :: [Fragment a] -> Parser (HashMap Name (Fragment a))
 validateFragmentsP = sequence . HashMap.fromListWithKey (liftJoin2 . onDupe) . fmap (fragName &&& pure)
   where
-    onDupe k frag0 frag1 = validationErrorP [fragPos frag0, fragPos frag1] $ "Duplicated fragment name " <> k
-
-parseErrorP :: [Pos] -> Text -> Parser a
-parseErrorP pos msg = customFailure $ E.ParseError pos msg
-
-validationErrorP :: [Pos] -> Text -> Parser a
-validationErrorP pos msg = customFailure $ E.ValidationError pos msg
+    onDupe k frag0 frag1 = L.validationErrorP [fragPos frag0, fragPos frag1] $ "Duplicated fragment name " <> k
 
 liftJoin2 :: (Monad m) => (a -> b -> m c) -> m a -> m b -> m c
 liftJoin2 f ma mb = join (liftA2 f ma mb)

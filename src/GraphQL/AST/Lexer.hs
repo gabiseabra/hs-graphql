@@ -32,10 +32,12 @@ module GraphQL.AST.Lexer
   , intVal
   , doubleVal
   , stringVal
+  , syntaxErrorP
+  , validationErrorP
   )
   where
 
-import GraphQL.Response (Pos(..), GraphQLError(..))
+import qualified GraphQL.Response as E
 
 import Control.Applicative ((<|>), empty)
 import Control.Monad (void)
@@ -77,7 +79,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.Proxy (Proxy(..))
 
-type Parser = Parsec GraphQLError Text
+type Parser = Parsec E.GraphQLError Text
 
 upper, lower, alpha, ws, num :: String
 upper = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -138,16 +140,16 @@ optional_ = fmap (fromMaybe mempty) . optional
 between_ :: Parser sep -> Parser a -> Parser a
 between_ a = between a a
 
-mkPos :: P.SourcePos -> Pos
-mkPos p = Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
+mkPos :: P.SourcePos -> E.Pos
+mkPos p = E.Pos (P.unPos $ P.sourceLine p) (P.unPos $ P.sourceColumn p)
 
-getPos :: Parser Pos
+getPos :: Parser E.Pos
 getPos = mkPos <$> getSourcePos
 
-withPos :: (Pos -> a -> b) -> Parser a -> Parser b
+withPos :: (E.Pos -> a -> b) -> Parser a -> Parser b
 withPos f p = f <$> getPos <*> p
 
-(<@>) :: Parser a -> (Pos -> a -> b) -> Parser b
+(<@>) :: Parser a -> (E.Pos -> a -> b) -> Parser b
 (<@>) = flip withPos
 
 foldWithRecovery :: MonadParsec e s m => (a -> ParseError s e -> m a) -> (a -> m a) -> a -> m a
@@ -159,7 +161,7 @@ foldE = foldWithRecovery recoverFromTrivialError
 manyE :: MonadParsec e s m => ([a] -> m a) -> m [a]
 manyE f = foldE (\as -> (:as) <$> f as) []
 
-recoverFromTrivialError a (TrivialError _ _ _) = pure a
+recoverFromTrivialError a TrivialError {} = pure a
 recoverFromTrivialError _ e = parseError e
 
 braces, parens, brackets :: Parser a -> Parser a
@@ -177,7 +179,7 @@ argsE' f p pK pV = p $ manyE $ \kv -> do
   pos <- getPos
   k   <- pK <* symbol ":"
   if List.any ((== k) . fst) kv
-    then customFailure $ ValidationError [pos] $ "Duplicated argument " <> k
+    then syntaxErrorP [pos] $ "Duplicated argument " <> k
     else (,) <$> pure k <*> (f k =<< pV)
 
 argsE
@@ -290,3 +292,9 @@ blockString = label "BlockString" $ lexeme $ delim >> Text.pack <$> manyTill cha
 
 stringVal :: Parser Text
 stringVal = label "StringVal" $ choice [ blockString, lineString ] <* sc
+
+syntaxErrorP :: [E.Pos] -> Text -> Parser a
+syntaxErrorP pos msg = customFailure $ E.GraphQLError E.SYNTAX_ERROR (Just pos) Nothing msg
+
+validationErrorP :: [E.Pos] -> Text -> Parser a
+validationErrorP pos msg = customFailure $ E.GraphQLError E.VALIDATION_ERROR (Just pos) Nothing msg
