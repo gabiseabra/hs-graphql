@@ -6,7 +6,6 @@
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE RecordWildCards          #-}
@@ -16,7 +15,6 @@
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE UndecidableInstances     #-}
-{-# LANGUAGE ViewPatterns             #-}
 
 module GraphQL.TypeSystem.Main where
 
@@ -32,7 +30,6 @@ import           Data.Text (Text)
 import           GHC.Base (Alternative)
 import           GHC.Exts (Constraint)
 import           GraphQL.Internal
-import           GraphQL.Response
 
 type Typename = Text
 
@@ -50,6 +47,15 @@ data TypeKind where
   UNION        :: forall (m :: * -> *)  . TypeKind
   LIST         :: TypeKind             -> TypeKind
   NULLABLE     :: TypeKind             -> TypeKind
+
+instance Show TypeKind where
+  show SCALAR = "Scalar"
+  show ENUM = "Enum"
+  show INPUT_OBJECT = "InputObject"
+  show OBJECT = "Object"
+  show UNION = "Union"
+  show (LIST k) = "List<" <> show k <> ">"
+  show (NULLABLE k) = "Nullable<" <> show k <> ">"
 
 data TypeIO = IN | OUT
 
@@ -109,6 +115,22 @@ data InputDef a where
 
 -- * Type definitions & schema introspection
 
+data EnumValue a
+  = EnumValue
+    { enumValueDescription :: Maybe Text
+    , enumValue :: a
+    } deriving (Functor)
+
+data Field f i a
+  = Field
+    { fieldDescription :: Maybe Text
+    , fieldResolver :: i -> f a
+    } deriving (Functor)
+
+type Resolver m a = Exists2 (Field (Kleisli m a)) GraphQLInput (GraphQLOutputType m)
+
+type Variant m a = Exists1 (Kleisli Maybe a) (GraphQLObjectType m)
+
 type TypeDef :: TypeKind -> * -> *
 data TypeDef k a where
   ScalarType ::
@@ -122,6 +144,7 @@ data TypeDef k a where
     { enumTypename :: Typename
     , enumDescription :: Maybe Text
     , enumValues :: Map Text (EnumValue a)
+    , encodeEnum :: a -> Text
     } -> TypeDef ENUM a
   InputObjectType ::
     ( Row.Forall r GraphQLInputType
@@ -137,12 +160,9 @@ data TypeDef k a where
     , objectFields :: Map Text (Resolver m a)
     } -> TypeDef (OBJECT @m) a
   UnionType ::
-    ( Row.Forall r (GraphQLObjectType m)
-    , Row.AllUniqueLabels r
-    ) =>
     { unionTypename :: Typename
     , unionDescription :: Maybe Text
-    , unionFields :: a -> Var r
+    , unionPossibleTypes :: Map Typename (Variant m a)
     } -> TypeDef (UNION @m) a
   ListType ::
     ( JSON.ToJSON1 f
@@ -156,6 +176,7 @@ data TypeDef k a where
   NullableType ::
     ( JSON.ToJSON1 f
     , JSON.FromJSON1 f
+    , Traversable f
     , Alternative f
     ) =>
     { nullableTypename :: Typename
@@ -214,19 +235,4 @@ kindOf UnionType{} = UNION @(k || Identity)
 kindOf ListType{..} = LIST (kindOf listInnerType)
 kindOf NullableType{..} = NULLABLE (kindOf nullableInnerType)
 
-pattern OfKind :: TypeKind -> TypeDef k a
-pattern OfKind {k} <- (kindOf -> k)
-
-data EnumValue a
-  = EnumValue
-    { valueDescription :: Maybe Text
-    , value :: a
-    } deriving (Functor)
-
-data Field f i a
-  = Field
-    { fieldDescription :: Maybe Text
-    , fieldResolver :: i -> f a
-    } deriving (Functor)
-
-type Resolver m a = Exists2 (Field (Kleisli m a)) GraphQLInput (GraphQLOutputType m)
+data SomeType where SomeType :: TypeDef k a -> SomeType

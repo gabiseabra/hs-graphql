@@ -34,13 +34,6 @@ import qualified Data.Text as Text
 
 newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
 
-type Undefined :: OperationType -> (* -> *) -> * -> *
-data Undefined op m r = Undefined
-
-instance GraphQLType (Undefined op m r) where
-  type KIND (Undefined op m r) = ROOT @op @m @r
-  typeDef = RootType undefined UndefinedDef
-
 instance GraphQLType ID where
   type KIND ID = SCALAR
   typeDef = scalarDef "ID"
@@ -75,15 +68,15 @@ instance GraphQLType Char where
 
 instance GraphQLType a => GraphQLType (Maybe a) where
   type KIND (Maybe a) = NULLABLE (KIND a)
-  typeDef = NullableType "Nullable" (typeDef @a) $ NullableDef id id
+  typeDef = NullableType "Maybe" Nothing (typeDef @a)
 
 instance GraphQLType a => GraphQLType (Vector a) where
   type KIND (Vector a) = LIST (KIND a)
-  typeDef = ListType "Vector" (typeDef @a) $ ListDef id Just
+  typeDef = ListType "Vector" Nothing (typeDef @a)
 
 instance GraphQLType a => GraphQLType (NonEmpty a) where
   type KIND (NonEmpty a) = LIST (KIND a)
-  typeDef = ListType "NonEmpty" (typeDef @a) $ ListDef (Vec.fromList . NE.toList) (NE.nonEmpty . Vec.toList)
+  typeDef = ListType "NonEmpty" Nothing (typeDef @a)
 
 type family StringOrListK a where
   StringOrListK String = "String"
@@ -100,7 +93,7 @@ instance ListGraphQLType "String" String where
 
 instance GraphQLType a => ListGraphQLType "List" [a] where
   type LIST_KIND "List" [a] = LIST (KIND a)
-  listTypeDef = ListType "List" (typeDef @a) $ ListDef Vec.fromList (Just . Vec.toList)
+  listTypeDef = ListType "List" Nothing (typeDef @a)
 
 instance
   ( StringOrListK [a] ~ sym

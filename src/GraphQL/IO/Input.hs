@@ -1,107 +1,84 @@
-{-# LANGUAGE
-    DataKinds
-  , GADTs
-  , TypeFamilies
-  , FlexibleContexts
-  , FlexibleInstances
-  , UndecidableInstances
-  , TypeApplications
-  , ScopedTypeVariables
-  , DefaultSignatures
-  , TypeOperators
-  , OverloadedStrings
-  , RankNTypes
-#-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE RecordWildCards      #-}
 
 module GraphQL.IO.Input
   ( Input
-  , readInputType
-  , readInputFields
-  , readInput
+  , inputTypeParser
+  , inputFieldsParser
+  , inputParser
   ) where
 
+import           Control.Arrow ((>>>))
+import           Control.Lens (view)
 import           Control.Monad ((<=<))
+import           Control.Monad.Error.Class (MonadError(..))
 import qualified Data.Aeson as JSON
 import qualified Data.Aeson.Types as JSON
-import           Data.Aeson.Types ((<?>))
-import qualified Data.HashMap.Strict as Map
+import qualified Data.HashMap.Strict as HashMap
 import           Data.HashMap.Strict (HashMap)
-import qualified Data.List as List
+import           Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import qualified Data.Row as Row
 import qualified Data.Row.Records as Rec
 import           Data.Row.Records (Rec, Row)
 import qualified Data.Text as Text
 import           Data.Text (Text)
-import           Data.Vector (Vector)
-import           GraphQL.AST.Document (Name)
 import           GraphQL.TypeSystem.Main
-    ( EnumDef(EnumDef),
-      GraphQLInput(..),
-      GraphQLInputType,
-      GraphQLType(..),
-      InputDef(..),
-      InputObjectDef(..),
-      ListDef(..),
-      NullableDef(..),
-      ScalarDef(..),
-      TypeDef(..) )
 
-type Input = HashMap Name JSON.Value
+type Input = HashMap Text JSON.Value
 
 showType :: JSON.Value -> Text
-showType JSON.Null       = "Null"
-showType (JSON.String _) = "String"
-showType (JSON.Number _) = "Number"
-showType (JSON.Bool   _) = "Boolean"
-showType (JSON.Array  _) = "Array"
-showType (JSON.Object _) = "Object"
+showType JSON.Null      = "Null"
+showType JSON.String {} = "String"
+showType JSON.Number {} = "Number"
+showType JSON.Bool {}   = "Boolean"
+showType JSON.Array {}  = "Array"
+showType JSON.Object {} = "Object"
 
-readScalarType :: forall a. ScalarDef a -> Text -> JSON.Value -> Either Text a
-readScalarType (ScalarDef _ dec) lbl val = maybe err pure $ dec val
-  where err = Left $ "Failed to read " <> lbl <> ". Unexpected " <> showType val
+inputTypeParser :: TypeDef k a -> JSON.Value -> JSON.Parser a
+inputTypeParser def@ScalarType {..} = fmap (prependFailure def) JSON.parseJSON
+inputTypeParser def@EnumType {..} = fmap (prependFailure def) $ \case
+  JSON.String val -> case Map.lookup val enumValues of
+    Just EnumValue {..} -> pure enumValue
+    Nothing -> fail . Text.unpack $ val <> "\" is not a valid value of " <> enumTypename
+  val -> JSON.typeMismatch "String" val
+inputTypeParser def@ListType {..} = traverse (inputTypeParser listInnerType) <=< fmap (prependFailure def) JSON.parseJSON1
+inputTypeParser def@NullableType {..} = traverse (inputTypeParser nullableInnerType) <=< fmap (prependFailure def) JSON.parseJSON1
+inputTypeParser def@InputObjectType {..} = pure . decodeInputObject <=< fmap (prependFailure def) inputFieldsParser
+inputTypeParser def = const . prependFailure def . fail $ show (kindOf def) <> " is not a valid kind of input"
 
-readEnumType :: forall a. EnumDef a -> Text -> JSON.Value -> Either Text a
-readEnumType (EnumDef _ _ dec) lbl (JSON.String val) = maybe err pure $ dec val
-  where err = Left $ "Failed to read " <> lbl <> ". " <> Text.pack (show val) <> " is not a valid enum value"
-readEnumType _   lbl val = Left $ "Failed to read " <> lbl <> ". Expected a String value but got " <> showType val
+prependFailure t
+  = JSON.prependFailure
+  $ "Failed to parse "
+  <> show (kindOf t) <> " "
+  <> Text.unpack (view _typename t) <> ": "
 
-readListType :: forall f. ListDef f -> Text -> JSON.Value -> Either Text (f JSON.Value)
-readListType (ListDef _ dec) lbl (JSON.Array val) = maybe err pure $ dec val
-  where err = Left $ "Failed to read " <> lbl
-readListType _   lbl val = Left $ "Failed to read " <> lbl <> ". Expected an Array value but got " <> showType val
-
-readNullableType :: forall f. NullableDef f -> JSON.Value -> Either Text (f JSON.Value)
-readNullableType (NullableDef _ dec) JSON.Null = pure (dec Nothing)
-readNullableType (NullableDef _ dec) val       = pure (dec $ Just val)
-
-readInputType :: TypeDef k a -> JSON.Value -> Either Text a
-readInputType (ScalarType      ty _ def                   ) = readScalarType def ty
-readInputType (EnumType        ty _ def                   ) = readEnumType def ty
-readInputType (ListType        ty a def@(ListDef      _ _)) = traverse (readInputType a) <=< readListType def ty
-readInputType (NullableType    _  a def@(NullableDef  _ _)) = traverse (readInputType a) <=< readNullableType def
-readInputType (InputObjectType ty _ (InputObjectDef f    )) = fmap f . readInputFields ty
-readInputType (ObjectType      ty _ _                     ) = const . Left $ "Object type " <> ty <> "is not an input type"
-readInputType (UnionType       ty _ _                     ) = const . Left $ "Union type " <> ty <> "is not an input type"
-readInputType (RootType        ty _                       ) = const . Left $ "Root type " <> ty <> "is not an input type"
-
-readInputFields :: forall r
+inputFieldsParser :: forall r
   .  Row.AllUniqueLabels r
   => Row.Forall r GraphQLInputType
-  => Text
-  -> JSON.Value
-  -> Either Text (Rec r)
-readInputFields _ (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
+  => JSON.Value
+  -> JSON.Parser (Rec r)
+inputFieldsParser (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readField
   where
-    readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> Either Text a
+    readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> JSON.Parser a
     readField lbl =
       let
         key = Text.pack (show lbl)
-        val = fromMaybe JSON.Null $ Map.lookup key obj
-      in readInputType (typeDef @a) val
-readInputFields lbl val = Left $ "Failed to read " <> lbl <> ". Expected an Object value but got " <> showType val
+        val = fromMaybe JSON.Null $ HashMap.lookup key obj
+      in inputTypeParser (typeDef @a) val
+inputFieldsParser val = JSON.typeMismatch "Object" val
 
-readInput :: forall a. GraphQLInput a => Text -> Input -> Either Text a
-readInput lbl = case inputDef @a of
-  EmptyFields a                  -> const $ pure a
-  InputFields (InputObjectDef f) -> pure . f <=< readInputFields lbl . JSON.Object
+inputParser :: forall a. GraphQLInput a => Input -> JSON.Parser a
+inputParser = case inputDef @a of
+  EmptyFields a -> const $ pure a
+  InputFields f -> fmap f . inputFieldsParser . JSON.Object
