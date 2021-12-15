@@ -48,15 +48,6 @@ data TypeKind where
   LIST         :: TypeKind             -> TypeKind
   NULLABLE     :: TypeKind             -> TypeKind
 
-instance Show TypeKind where
-  show SCALAR = "Scalar"
-  show ENUM = "Enum"
-  show INPUT_OBJECT = "InputObject"
-  show OBJECT = "Object"
-  show UNION = "Union"
-  show (LIST k) = "List<" <> show k <> ">"
-  show (NULLABLE k) = "Nullable<" <> show k <> ">"
-
 data TypeIO = IN | OUT
 
 type family k ?>> io where
@@ -226,13 +217,13 @@ _description f t = f (get t) <&> set t
     set def@ListType {..} a = def {listDescription = a}
     set def@NullableType {..} a = def {nullableDescription = a}
 
-kindOf :: forall k a. TypeDef k a -> TypeKind
-kindOf ScalarType{} = SCALAR
-kindOf EnumType{} = ENUM
-kindOf InputObjectType{} = INPUT_OBJECT
-kindOf ObjectType{} = OBJECT @(k || Identity)
-kindOf UnionType{} = UNION @(k || Identity)
-kindOf ListType{..} = LIST (kindOf listInnerType)
-kindOf NullableType{..} = NULLABLE (kindOf nullableInnerType)
+kindOf :: forall k a. TypeDef k a -> String
+kindOf ScalarType{} = "SCALAR"
+kindOf EnumType{} = "ENUM"
+kindOf InputObjectType{} = "INPUT_OBJECT"
+kindOf ObjectType{} = "OBJECT"
+kindOf UnionType{} = "UNION"
+kindOf ListType{..} = "LIST" <> kindOf listInnerType
+kindOf NullableType{..} = "NULLABLE" <> kindOf nullableInnerType
 
 data SomeType where SomeType :: TypeDef k a -> SomeType

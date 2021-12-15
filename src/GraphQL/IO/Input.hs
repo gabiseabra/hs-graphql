@@ -60,7 +60,7 @@ inputTypeParser def = const . prependFailure def . fail $ show (kindOf def) <> "
 prependFailure t
   = JSON.prependFailure
   $ "Failed to parse "
-  <> show (kindOf t) <> " "
+  <> kindOf t <> " "
   <> Text.unpack (view _typename t) <> ": "
 
 inputFieldsParser :: forall r
