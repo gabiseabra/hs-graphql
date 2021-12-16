@@ -52,6 +52,7 @@ library
     , comonad
     , bifunctors
     , hashable
+    , kan-extensions
 
 test-suite hs-graphql-test
   default-language:    Haskell2010
