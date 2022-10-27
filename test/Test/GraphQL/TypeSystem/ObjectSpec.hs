@@ -57,9 +57,9 @@ instance GraphQLType C where
   typeDef
     = ObjectType "C" Nothing
     $ Map.fromList
-    [ ("c0", resolver Nothing $ \C { c0 } () -> pure c0)
-    , ("c1", resolver Nothing $ \C { c1 } () -> pure c1)
-    , ("c2", resolver Nothing $ \C { c0, c1 } () -> pure (c0 + c1))
+    [ ("c0", mempty `resolver` \() -> pure . c0)
+    , ("c1", mempty `resolver` \() -> pure . c1)
+    , ("c2", mempty `resolver` \() C { c0, c1 } -> pure (c0 + c1))
     ]
 
 c = C 69 96 :: C
