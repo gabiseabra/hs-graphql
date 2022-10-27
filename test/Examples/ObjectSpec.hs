@@ -89,21 +89,21 @@ objectSpec = describe "objectDef" $ do
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection on objects" $ do
-    eval @(A IO) [] `shouldBe` validationError [E.Pos 0 0] "Object type A must have a selection"
+    eval @(A IO) [] `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Object type A must have a selection"
   it "fails with non-empty selection on scalars" $ do
     let s = [ sel_ "a0" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` validationError [E.Pos 0 0] "Scalar type Int cannot have a selection"
+    eval @(A IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Scalar type Int cannot have a selection"
   it "fails with mismatched typename" $ do
     let s = [ sel_ "a0" `on` "X" &: [] ]
-    eval @(A IO) s `shouldBe` validationError [E.Pos 0 0] "Typename mismatch: Expected A, got X"
+    eval @(A IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Typename mismatch: Expected A, got X"
   it "fails invalid selection" $ do
     let s = [ sel_ "x" &: [] ]
-    eval @(A IO) s `shouldBe` validationError [E.Pos 0 0] "A does not have a field named \"x\""
+    eval @(A IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "A does not have a field named \"x\""
   it "fails with non-empty selection on __typename" $ do
     let s = [ sel_ "__typename" &: [ sel_ "??" &: [] ] ]
-    eval @(A IO) s `shouldBe` validationError [E.Pos 0 0] "Scalar type String cannot have a selection"
+    eval @(A IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Scalar type String cannot have a selection"
   it "fails with non-empty input on __typename" $ do
     let
       i = object [ "a" .= True ]
       s = [ sel "__typename" i &: [] ]
-    eval @(A IO) s `shouldBe` validationError [E.Pos 0 0] "Field __typename does not have arguments"
+    eval @(A IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Field __typename does not have arguments"

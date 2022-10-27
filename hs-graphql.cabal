@@ -38,7 +38,6 @@ library
     , free
     , mtl
     , recursion-schemes
-    , monadic-recursion-schemes
     , row-types
     , text
     , unordered-containers
@@ -52,7 +51,6 @@ library
     , comonad
     , bifunctors
     , hashable
-    , kan-extensions
 
 test-suite hs-graphql-test
   default-language:    Haskell2010

@@ -66,13 +66,13 @@ unionSpec = describe "unionDef" $ do
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection" $ do
-    eval @(AB IO) [] `shouldBe` validationError [E.Pos 0 0] "Union type AB must have a selection"
+    eval @(AB IO) [] `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Union type AB must have a selection"
   it "fails with invalid typename" $ do
     let s = [ sel_ "x" `on` "X" &: [] ]
-    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "\"X\" is not a possible type of AB"
+    eval @(AB IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "\"X\" is not a possible type of AB"
   it "fails with unspecified typename" $ do
     let s = [ sel_ "a0" &: [] ]
-    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "Selections of union types must have a typename"
+    eval @(AB IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "Selections of union types must have a typename"
   it "fails with invalid selection on possible type" $ do
     let s = [ sel_ "a1" `on` "A" &: [] ]
-    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "A does not have a field named \"a1\""
+    eval @(AB IO) s `shouldBe` E.graphQLError E.VALIDATION_ERROR [E.Pos 0 0] "A does not have a field named \"a1\""

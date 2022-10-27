@@ -223,7 +223,7 @@ kindOf EnumType{} = "ENUM"
 kindOf InputObjectType{} = "INPUT_OBJECT"
 kindOf ObjectType{} = "OBJECT"
 kindOf UnionType{} = "UNION"
-kindOf ListType{..} = "LIST" <> kindOf listInnerType
-kindOf NullableType{..} = "NULLABLE" <> kindOf nullableInnerType
+kindOf ListType{..} = "LIST " <> kindOf listInnerType
+kindOf NullableType{..} = "NULLABLE " <> kindOf nullableInnerType
 
 data SomeType where SomeType :: TypeDef k a -> SomeType

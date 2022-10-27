@@ -52,7 +52,6 @@ import Data.Functor.Const (Const(..))
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Foldable (Recursive(..), Base)
-import Data.Functor.Foldable.Monadic (cataM)
 import Data.Functor.Sum (Sum(..))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -69,28 +68,29 @@ import Text.Megaparsec.Error
   )
 import System.IO (FilePath)
 import Control.Monad.Error.Class (MonadError(..))
+import           GraphQL.Internal (cataM)
 
 -- Extracts one operation from a document and returns an executable operation
 -- while performing the following validations:
 -- - Requested operation name is valid
 -- - No required variables are missing
-getExecutableOperation :: MonadError GraphQLError m => JSON.Object -> Maybe Name -> Document (Tree (Field Value)) -> m (Operation (Tree (Field JSON.Value)))
+getExecutableOperation :: MonadError (NonEmpty GraphQLError) m => JSON.Object -> Maybe Name -> Document (Tree (Field Value)) -> m (Operation (Tree (Field JSON.Value)))
 getExecutableOperation input opName doc = do
   op <- getOperation opName doc
   vars <- HashMap.traverseWithKey (resolveVariable input) . view _opVariables $ op
   traverse (hoistCofreeM $ bitraverse (traverse $ resolveValue vars) pure) op
 
-getOperation :: MonadError GraphQLError m => Maybe Name -> Document a -> m (Operation a)
+getOperation :: MonadError (NonEmpty GraphQLError) m => Maybe Name -> Document a -> m (Operation a)
 getOperation Nothing     (Document _ (InL (Identity op))) = pure op
-getOperation Nothing     (Document _ (InR _            )) = validationError [] "Operation name is required for documents with multiple operations"
+getOperation Nothing     (Document _ (InR _            )) = graphQLError VALIDATION_ERROR [] "Operation name is required on documents with multiple operations"
 getOperation (Just name) (Document _ (InL (Identity op)))
   | opName op == Just name = pure op
-  | otherwise = validationError [] $ "Operation " <> name <> " is not defined"
+  | otherwise = graphQLError VALIDATION_ERROR [] $ "Operation " <> name <> " is not defined"
 getOperation (Just name) (Document _ (InR ops)) = case HashMap.lookup name ops of
-  Nothing -> validationError [] $ "Operation " <> name <> " is not defined"
+  Nothing -> graphQLError VALIDATION_ERROR [] $ "Operation " <> name <> " is not defined"
   Just op -> pure op
 
-resolveValue :: forall m. (Applicative m, MonadError GraphQLError m) => HashMap Name (Variable, JSON.Value) -> Value -> m JSON.Value
+resolveValue :: forall m. (Applicative m, MonadError (NonEmpty GraphQLError) m) => HashMap Name (Variable, JSON.Value) -> Value -> m JSON.Value
 resolveValue vars = cataM alg
   where
     alg :: Base Value JSON.Value -> m JSON.Value
@@ -99,13 +99,13 @@ resolveValue vars = cataM alg
       Nothing -> E.graphQLError E.VALIDATION_ERROR [pos] $ "Variable $" <> k <> " is not defined"
       Just (_,val) -> pure val
 
-resolveVariable :: MonadError GraphQLError m => JSON.Object -> Name -> Variable -> m (Variable, JSON.Value)
+resolveVariable :: MonadError (NonEmpty GraphQLError) m => JSON.Object -> Name -> Variable -> m (Variable, JSON.Value)
 resolveVariable = HashMap.filter (/= JSON.Null) >>> \input k var ->
   case HashMap.lookup k input of
     Just val -> pure (var, val)
-    Nothing | Just val <- varValue var -> pure (var,cata (JSON.toJSON . CofreeT.tailF) val)
-            | isNullable (varDefinition var) -> pure (var,JSON.Null)
-            | otherwise -> validationError [varPos var] $ "Required variable $" <> k <> " is missing from input"
+    Nothing | Just val <- varDefaultValue var -> pure (var,cata (JSON.toJSON . CofreeT.tailF) val)
+            | isNullable (varTypeDefinition var) -> pure (var,JSON.Null)
+            | otherwise -> graphQLError VALIDATION_ERROR [varPos var] $ "Required variable $" <> k <> " is missing from input"
 
 -- | Parses a raw GraphQL document from a file
 parseDocument :: MonadError (NonEmpty GraphQLError) m => FilePath -> Text -> m (Document (Selection (Field Value)))

@@ -8,8 +8,7 @@ module GraphQL.AST.Validation
   ( basicRules
   , mergeOverlappingFields
   , validateDefaultValues
-  , collectFields
-  , validationError
+  , unfoldFields
   ) where
 
 import           Control.Applicative ((<|>))
@@ -29,8 +28,6 @@ import           Data.Bitraversable (bitraverse)
 import           Data.Fix (Fix(..))
 import           Data.Function (on, fix)
 import           Data.Functor.Base (TreeF(..))
-import           Data.Functor.Foldable (cata)
-import           Data.Functor.Foldable.Monadic (cataM)
 import           Data.Functor.Identity (Identity(..))
 import qualified Data.HashMap.Strict as HashMap
 import           Data.HashMap.Strict (HashMap)
@@ -43,13 +40,13 @@ import qualified Data.Text as Text
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
 import           GraphQL.AST.Document
-import           GraphQL.Response (Pos, ErrorCode(..), GraphQLError, graphQLError)
+import           GraphQL.Internal (cataM)
+import           GraphQL.Response (Pos, ErrorCode(..), GraphQLError(..), graphQLError)
+import Data.Functor.Foldable (cata)
 
-type Rule a b = (forall m. MonadError GraphQLError m => Document a -> m (Document b))
+type Rule a b = (forall m. MonadError (NonEmpty GraphQLError) m => Document a -> m (Document b))
 type Rule' a = Rule a a
 
-validationError :: MonadError GraphQLError m => [Pos] -> Text -> m a
-validationError = graphQLError VALIDATION_ERROR
 forget :: Functor f => Cofree f a -> Fix f
 forget = cata \(_ CofreeT.:< x) -> Fix x
 
@@ -59,7 +56,7 @@ node (NodeF a _) = a
 basicRules :: Eq a => Rule (Selection (Field a)) (Tree (Field a))
 basicRules
   = validateDefaultValues
-  <=< collectFields
+  <=< unfoldFields
 
 -- Validates that overlapping fields are compatible and deduplicates selections
 -- TODO link to spec
@@ -69,7 +66,7 @@ mergeOverlappingFields = traverse . cataM $ \(pos CofreeT.:< NodeF a as) -> (pos
     merge as a = case List.find (on overlaps (node . unwrap) a) as of
       Nothing -> pure (a:as)
       Just b | forget a == forget b -> pure as
-      Just b -> validationError [extract a, extract b] "Conflicting overlapping fields"
+      Just b -> graphQLError VALIDATION_ERROR [extract a, extract b] "Conflicting overlapping fields"
     name f = fieldAlias f <|> Just (fieldName f)
     overlaps = (==) `on` name
 
@@ -87,7 +84,7 @@ validateDefaultValues doc = do
     validation var@(Variable _ def (Just (pos:<val))) =
       if checkTypeDefinition def (pos:<val)
         then pure ()
-        else validationError [pos]
+        else graphQLError VALIDATION_ERROR [pos]
               $ "Expected "
               <> Text.pack (show def)
               <> ", found "
@@ -97,18 +94,18 @@ validateDefaultValues doc = do
 -- - Document doesn't have unused fragments
 -- - Fragments don't form cycles
 -- - Fragment spreads are valid
-collectFields :: Rule (Selection a) (Tree a)
-collectFields doc = do
-  (doc', visited) <- runStateT (collectFieldsST doc) mempty
+unfoldFields :: Rule (Selection a) (Tree a)
+unfoldFields doc = do
+  (doc', visited) <- runStateT (unfoldFieldsST doc) mempty
   let unused = HashMap.filterWithKey (\k _ -> Set.notMember k visited) $ fragments doc'
   if length visited == length (fragments doc)
     then pure doc'
-    else validationError (fmap fragPos . HashMap.elems $ unused)
+    else graphQLError VALIDATION_ERROR (fmap fragPos . HashMap.elems $ unused)
           $ "Document has unused fragments: "
           <> Text.intercalate ", " (HashMap.keys unused)
 
-collectFieldsST :: MonadError GraphQLError m => Document (Selection a) -> StateT (Set Name) m (Document (Tree a))
-collectFieldsST doc = do
+unfoldFieldsST :: MonadError (NonEmpty GraphQLError) m => Document (Selection a) -> StateT (Set Name) m (Document (Tree a))
+unfoldFieldsST doc = do
   frags <- traverseFrag (fragments doc) . fragments $ doc
   ops   <- traverseOp frags . operations $ doc
   pure $ Document frags ops
@@ -125,23 +122,23 @@ eraseFragments f (pos :< Node a as          ) = pure . (pos :<) . NodeF a <$> tr
 eraseFragments f (_   :< InlineFragment _ as) = traverseAccum (eraseFragments f) as
 eraseFragments f (pos :< FragmentSpread k   ) = f pos k
 
-pickFragment :: MonadError GraphQLError m => HashMap Name (Fragment a) -> Pos -> Name -> StateT (Set Name) m (NonEmpty a)
+pickFragment :: MonadError (NonEmpty GraphQLError) m => HashMap Name (Fragment a) -> Pos -> Name -> StateT (Set Name) m (NonEmpty a)
 pickFragment frags pos k = do
   ST.modify (Set.insert k)
   case HashMap.lookup k frags of
     Just frag -> pure $ fragSelection frag
-    Nothing -> lift $ validationError [pos] $ "Fragment " <> k <> " is not defined"
+    Nothing -> lift $ graphQLError VALIDATION_ERROR [pos] $ "Fragment " <> k <> " is not defined"
 
-visitFragment :: MonadError GraphQLError m => HashMap Name (Fragment (Selection a)) -> Pos -> Name -> StateT (Set Name) m (NonEmpty (Tree a))
+visitFragment :: MonadError (NonEmpty GraphQLError) m => HashMap Name (Fragment (Selection a)) -> Pos -> Name -> StateT (Set Name) m (NonEmpty (Tree a))
 visitFragment frags = fix $ \f pos k -> do
   visited <- ST.get
   if Set.member k visited
-    then lift $ validationError [pos] $ "Cycle in fragment " <> k
+    then lift $ graphQLError VALIDATION_ERROR [pos] $ "Cycle in fragment " <> k
     else case HashMap.lookup k frags of
       Just frag -> do
         ST.put (Set.insert k visited)
         traverseAccum (eraseFragments f) $ fragSelection frag
-      Nothing   -> lift $ validationError [pos] $ "Fragment " <> k <> " is not defined"
+      Nothing   -> lift $ graphQLError VALIDATION_ERROR [pos] $ "Fragment " <> k <> " is not defined"
 
 traverseAccum :: (Monad m, Traversable f, Monad f) => (a -> m (f b)) -> f a -> m (f b)
 traverseAccum f = pure . join <=< traverse f

@@ -73,8 +73,8 @@ instance JSON.ToJSON GraphQLError where
       , "extensions" .= object [ "code" .= show errorCode ]
       ]
 
-graphQLError :: MonadError GraphQLError m => ErrorCode -> [Pos] -> Text -> m a
-graphQLError errorCode locations message = throwError $ GraphQLError errorCode (Just locations) Nothing message
+graphQLError :: MonadError (NonEmpty GraphQLError) m => ErrorCode -> [Pos] -> Text -> m a
+graphQLError errorCode locations message = throwError . pure $ GraphQLError errorCode (Just locations) Nothing message
 
 errorResponse :: NonEmpty e -> Response e a
 errorResponse errors = Response (Biff (Compose (Just errors), Nothing))

@@ -8,7 +8,8 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module GraphQL.Internal
-  ( mapRow
+  ( cataM
+  , mapRow
   , recordAccessors
   , variantCases
   , eraseWithLabelsF
@@ -34,6 +35,16 @@ import qualified Data.Row.Variants as Var
 import           Data.String (IsString)
 import qualified Data.Text as Text
 import           Data.Text (Text)
+import           Data.Functor.Foldable (Recursive(..), Base)
+
+cataM
+  :: Monad m
+  => Traversable (Base t)
+  => Recursive t
+  => (Base t a -> m a) -- ^ algebra
+  -> t -> m a
+cataM phi = h
+  where h = phi <=< mapM h . project
 
 mapRow :: forall c r b
   .  Row.Forall r c

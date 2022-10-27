@@ -22,6 +22,7 @@ import Data.Functor.Base (TreeF(..))
 import Data.Text (Text)
 import qualified Data.Text as Text
 import GraphQL.AST.Document (Field(..), ExecutableSelection, Att)
+import Data.List.NonEmpty (NonEmpty)
 
 (&:) :: Field JSON.Value -> [ExecutableSelection] -> ExecutableSelection
 (&:) s r = Pos 0 0 :< NodeF s r
@@ -36,7 +37,7 @@ as :: Field JSON.Value -> Text -> Field JSON.Value
 as s a = s { fieldAlias = Just a }
 
 on :: Field JSON.Value -> Text -> Field JSON.Value
-on s a = s { fieldType = Just a }
+on s a = s { fieldTypename = Just a }
 
 root :: [ExecutableSelection] -> ExecutableSelection
 root as = sel_ "root" &: as
@@ -54,16 +55,5 @@ exec a = root >>> resolveType >>> \case
 eval
   :: forall a
   .  GraphQLOutputType IO a
-  => [ExecutableSelection] -> Either GraphQLError ()
+  => [ExecutableSelection] -> Either (NonEmpty GraphQLError) ()
 eval = second (const ()) . resolveType @IO @a . root
-
-pos = Pos
-
-validationError :: [Pos] -> Text -> Either GraphQLError a
-validationError pos = Left . GraphQLError VALIDATION_ERROR (Just pos) Nothing
-
-inputError :: [Pos] -> Text -> Either GraphQLError a
-inputError pos = Left . GraphQLError BAD_INPUT_ERROR (Just pos) Nothing
-
-parseError :: [Pos] -> Text -> Either GraphQLError a
-parseError pos = Left . GraphQLError SYNTAX_ERROR (Just pos) Nothing

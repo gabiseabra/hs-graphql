@@ -48,8 +48,9 @@ import           GraphQL.TypeSystem
 import           GraphQL.Types ()
 import           Prelude hiding (id, (.))
 import qualified Debug.Trace as Debug
+import Data.List.NonEmpty (NonEmpty)
 
-type V = Either E.GraphQLError
+type V = Either (NonEmpty E.GraphQLError)
 
 resolveType :: forall m a. (Monad m, GraphQLOutputType m a) => AST.ExecutableSelection -> V (Kleisli m a JSON.Value)
 resolveType = resolve (typeDef @a)
@@ -70,7 +71,7 @@ object :: forall m a. Monad m => TypeDef (OBJECT @m) a -> AST.ExecutableSelectio
 object def@ObjectType {..} s@(pos:<NodeF _ as) = do
   validateTypename objectTypename s
   fmap JSON.Object . sequence . HashMap.fromList
-    <$> traverse (bisequence . (pure . k &&& v)) as
+    <$> traverse (sequence . (k &&& v)) as
   where
     k (_:<NodeF field _) = fieldName' field
     v s = runResolver s =<< select def s
@@ -115,7 +116,7 @@ runVariant s (Exists1 (Kleisli f :: Kleisli Maybe a b)) = do
 matchType :: TypeDef (UNION @m) a -> AST.ExecutableSelection -> V [Hash (Variant m a)]
 matchType UnionType {..} (pos:<NodeF AST.Field {..} _)
   | fieldName == "__typename" = pure . fmap (uncurry Hash) . Map.toList $ unionPossibleTypes
-  | Just t <- fieldType = case Map.lookup t unionPossibleTypes of
+  | Just t <- fieldTypename = case Map.lookup t unionPossibleTypes of
       Just a -> pure [Hash t a]
       Nothing -> E.graphQLError E.VALIDATION_ERROR [pos] $ "\"" <> t <> "\" is not a possible type of " <> unionTypename
   | otherwise = E.graphQLError E.VALIDATION_ERROR [pos] "Selections of union types must have a typename"
@@ -130,7 +131,7 @@ fieldName' f = fromMaybe (AST.fieldName f) (AST.fieldAlias f)
 
 validateTypename :: Typename -> AST.ExecutableSelection -> V ()
 validateTypename t0 (pos:<NodeF AST.Field {..} _)
-  | Just t1 <- fieldType
+  | Just t1 <- fieldTypename
   , t1 /= t0
       = E.graphQLError E.VALIDATION_ERROR  [pos]
       $ "Typename mismatch: Expected " <> t0 <> ", got " <> t1

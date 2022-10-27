@@ -67,6 +67,7 @@ data ConstValueF r
 
 type ConstValue = Att ConstValueF
 
+-- A variable or constant value
 type Value = Att (Const Name :+: ConstValueF)
 
 instance Eq1 ConstValueF where
@@ -115,8 +116,8 @@ instance JSON.ToJSON1 ConstValueF where
 data Variable
   = Variable
     { varPos :: Pos
-    , varDefinition :: TypeDefinition
-    , varValue :: Maybe ConstValue
+    , varTypeDefinition :: TypeDefinition
+    , varDefaultValue :: Maybe ConstValue
     } deriving (Eq, Show)
 
 -- * Type definition node
@@ -162,7 +163,7 @@ isNullable _ = True
 
 data Field a
   = Field
-    { fieldType :: Maybe Name
+    { fieldTypename :: Maybe Name
     , fieldAlias :: Maybe Name
     , fieldName :: Name
     , fieldArgs :: HashMap Name a
@@ -190,11 +191,6 @@ data SelectionF a r
 
 type Selection a = Att (SelectionF a)
 
-data Ix a
-  = NodeIx a Int
-  | FragmentIx Name Int
-  deriving (Eq, Show)
-
 instance Bifunctor SelectionF where
   bimap f g (Node a r)           = Node (f a) (fmap g r)
   bimap f g (FragmentSpread a)   = FragmentSpread a
@@ -221,6 +217,12 @@ instance Show a => Show1 (SelectionF a) where
   liftShowsPrec sp sl d (FragmentSpread a)   = (<>) $ "FragmentSpread " <> show a
   liftShowsPrec sp sl d (InlineFragment a r) = showsUnaryWith (liftShowsPrec sp sl) ("InlineFragment " <> show a) d r
 
+data Ix a
+  = NodeIx a Int
+  | FragmentIx Name Int
+  deriving (Eq, Show)
+
+-- An indexed traversal over selection nodes indexed by node or fragment name
 _nodes :: IndexedTraversal [Ix a] (Cofree (SelectionF a) x) (Cofree (SelectionF b) x) a b
 _nodes = flip go []
   where
@@ -228,9 +230,6 @@ _nodes = flip go []
       Node a xs -> Node <$> indexed f path a <*> itraverse (go f . (:path) . NodeIx a) xs
       InlineFragment a xs -> InlineFragment a <$> itraverse (go f . (:path) . FragmentIx a) xs
       FragmentSpread a -> pure $ FragmentSpread a
-
-ix :: SelectionF a r -> SelectionF a ()
-ix = second (const ())
 
 -- * Root nodes
 

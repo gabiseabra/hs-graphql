@@ -22,6 +22,7 @@ import           Control.Arrow ((>>>))
 import           Control.Lens (view)
 import           Control.Monad ((<=<))
 import           Control.Monad.Error.Class (MonadError(..))
+import Data.Aeson ((.:))
 import qualified Data.Aeson as JSON
 import qualified Data.Aeson.Types as JSON
 import qualified Data.HashMap.Strict as HashMap
@@ -34,17 +35,12 @@ import           Data.Row.Records (Rec, Row)
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import           GraphQL.TypeSystem.Main
+import Control.Applicative ((<|>))
+import Data.String (fromString)
 
-type Input = HashMap Text JSON.Value
+type Input = JSON.Object
 
-showType :: JSON.Value -> Text
-showType JSON.Null      = "Null"
-showType JSON.String {} = "String"
-showType JSON.Number {} = "Number"
-showType JSON.Bool {}   = "Boolean"
-showType JSON.Array {}  = "Array"
-showType JSON.Object {} = "Object"
-
+-- Creates a JSON parser from a type definition
 inputTypeParser :: TypeDef k a -> JSON.Value -> JSON.Parser a
 inputTypeParser def@ScalarType {..} = fmap (prependFailure def) JSON.parseJSON
 inputTypeParser def@EnumType {..} = fmap (prependFailure def) $ \case
@@ -63,6 +59,7 @@ prependFailure t
   <> kindOf t <> " "
   <> Text.unpack (view _typename t) <> ": "
 
+-- Creates a JSON parser for input object fields
 inputFieldsParser :: forall r
   .  Row.AllUniqueLabels r
   => Row.Forall r GraphQLInputType
@@ -73,9 +70,9 @@ inputFieldsParser (JSON.Object obj) = Rec.fromLabelsA @GraphQLInputType readFiel
     readField :: forall l a. (Row.KnownSymbol l, GraphQLInputType a) => Row.Label l -> JSON.Parser a
     readField lbl =
       let
-        key = Text.pack (show lbl)
-        val = fromMaybe JSON.Null $ HashMap.lookup key obj
-      in inputTypeParser (typeDef @a) val
+        key = fromString (show lbl)
+        val = obj .: key <|> pure JSON.Null
+      in inputTypeParser (typeDef @a) =<< val
 inputFieldsParser val = JSON.typeMismatch "Object" val
 
 inputParser :: forall a. GraphQLInput a => Input -> JSON.Parser a
