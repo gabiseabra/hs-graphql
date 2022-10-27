@@ -131,9 +131,7 @@ resolverDef ty
   $ recordAccessors @a
   where
     go :: forall r. GraphQLResolver m r => (a -> r) -> Resolver m a
-    go = Exists2 @GraphQLInput @(ResolverInput r)
-                 @(GraphQLOutputType m) @(ResolverOutput r)
-      . Field mempty . fmap Kleisli . flip . fmap mkFieldResolver
+    go = resolver mempty . fmap mkFieldResolver
 
 class
   ( GraphQLInput (ResolverInput a)
@@ -150,3 +148,11 @@ instance
   type ResolverInput (i -> m a) = i
   type ResolverOutput (i -> m a) = a
   mkFieldResolver = id
+
+resolver
+  :: GraphQLOutputType m r
+  => GraphQLInput i
+  => Maybe Text
+  -> (a -> i -> m r)
+  -> Resolver m a
+resolver desc = Exists2 . Field desc . fmap Kleisli . flip

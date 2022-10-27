@@ -6,6 +6,7 @@
   , OverloadedStrings
   , TypeApplications
   , MultiParamTypeClasses
+  , NamedFieldPuns
 #-}
 
 module Examples.ObjectSpec where
@@ -14,6 +15,7 @@ import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
 import           Data.Aeson ((.=), object)
 import           Data.Proxy (Proxy(..))
+import qualified Data.Map as Map
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import           GHC.Generics (Generic)
@@ -40,18 +42,33 @@ a = A { a0 = \_ -> pure 420
       , a2 = \_ -> pure [a, a, a]
       }
 
-newtype C = C { c0 :: Int } deriving (Generic)
+newtype B = B { b0 :: Int } deriving (Generic)
+
+instance GraphQLType B where
+  type KIND B = OBJECT @IO
+  typeDef = objectDef "B"
+
+b = B 420 :: B
+
+data C = C { c0 :: Int, c1 :: Int } deriving (Generic)
 
 instance GraphQLType C where
   type KIND C = OBJECT @IO
-  typeDef = objectDef "C"
+  typeDef
+    = ObjectType "C" Nothing
+    $ Map.fromList
+    [ ("c0", resolver Nothing $ \C { c0 } () -> pure c0)
+    , ("c1", resolver Nothing $ \C { c1 } () -> pure c1)
+    , ("c2", resolver Nothing $ \C { c0, c1 } () -> pure (c0 + c1))
+    ]
 
-c = C 420 :: C
+c = C 69 96 :: C
 
 spec :: Spec
 spec = do
   resolverSpec
   objectSpec
+  simpleSpec
   validationSpec
 
 resolverSpec :: Spec
@@ -78,11 +95,28 @@ objectSpec = describe "objectDef" $ do
   it "resolves" $ do
     let
       s = [ sel_ "__typename" &: []
+          , sel_ "b0" &: []
+          ]
+      o = object
+          [ "__typename" .= ("B" :: String)
+          , "b0" .= (420 :: Int)
+          ]
+    exec b s `shouldReturn` o
+
+simpleSpec :: Spec
+simpleSpec = describe "simpleDef" $ do
+  it "resolves" $ do
+    let
+      s = [ sel_ "__typename" &: []
           , sel_ "c0" &: []
+          , sel_ "c1" &: []
+          , sel_ "c2" &: []
           ]
       o = object
           [ "__typename" .= ("C" :: String)
-          , "c0" .= (420 :: Int)
+          , "c0" .= (69 :: Int)
+          , "c1" .= (96 :: Int)
+          , "c2" .= (165 :: Int)
           ]
     exec c s `shouldReturn` o
 

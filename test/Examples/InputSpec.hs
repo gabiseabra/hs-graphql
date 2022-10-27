@@ -103,7 +103,7 @@ inputObjectSpec = describe "inputObjectDef" $ do
     exec a' s `shouldReturn` o
 
 validationSpec :: Spec
-validationSpec = describe "inputObjectDef" $ do
+validationSpec = describe "validation" $ do
   it "fails with invalid input values" $ do
     let
       i = object [ "i1_0" .= ("lmao" :: String) ]

@@ -70,6 +70,7 @@ test-suite hs-graphql-test
     , text
     , unordered-containers
     , megaparsec
+    , containers
 
 source-repository head
   type:     git

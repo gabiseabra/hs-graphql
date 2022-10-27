@@ -48,7 +48,7 @@ instance GraphQLOutputKind m GraphQLScalar where
   - [ ] interfaces
   - [x] lists
   - [x] nullable
-- [ ] parsing
+- [x] parsing
 - [x] validation
 - [x] resolvers
   - [x] resolve objects recursively
