@@ -8,7 +8,7 @@
   , TypeApplications
 #-}
 
-module Examples.EnumSpec where
+module Test.GraphQL.TypeSystem.EnumSpec where
 
 import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON

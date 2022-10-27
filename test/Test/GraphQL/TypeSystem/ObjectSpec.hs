@@ -9,7 +9,7 @@
   , NamedFieldPuns
 #-}
 
-module Examples.ObjectSpec where
+module Test.GraphQL.TypeSystem.ObjectSpec where
 
 import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON

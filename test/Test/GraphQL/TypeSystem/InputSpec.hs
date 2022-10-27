@@ -9,7 +9,7 @@
   , TypeApplications
 #-}
 
-module Examples.InputSpec where
+module Test.GraphQL.TypeSystem.InputSpec where
 
 import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON

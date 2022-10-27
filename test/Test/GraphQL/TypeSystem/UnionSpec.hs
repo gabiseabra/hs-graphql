@@ -7,7 +7,7 @@
   , TypeApplications
 #-}
 
-module Examples.UnionSpec where
+module Test.GraphQL.TypeSystem.UnionSpec where
 
 import           Control.Monad ((<=<))
 import qualified Data.Aeson as JSON
