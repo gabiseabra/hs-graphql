@@ -79,6 +79,10 @@ validateDefaultValues doc = do
   mapMOf_ (_docOperations . traverse . _opVariables . traverse) validation doc
   pure doc
   where
+    printValue
+      = LazyText.toStrict
+      . JSON.encodeToLazyText
+      . cata (JSON.toJSON . CofreeT.tailF)
     validation var@(Variable _ _ Nothing) = pure ()
     validation var@(Variable _ def (Just (pos:<val))) =
       if checkTypeDefinition def (pos:<val)
@@ -87,7 +91,7 @@ validateDefaultValues doc = do
               $ "Expected "
               <> Text.pack (show def)
               <> ", found "
-              <> (LazyText.toStrict . JSON.encodeToLazyText . cata (JSON.toJSON . CofreeT.tailF) $ (pos:<val))
+              <> printValue (pos:<val)
 
 -- Expands all selections into recursive trees of fields, while validating that:
 -- - Document doesn't have unused fragments

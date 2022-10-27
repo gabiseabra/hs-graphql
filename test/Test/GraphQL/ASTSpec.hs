@@ -27,15 +27,27 @@ import qualified Data.Text.IO as Text (readFile)
 import Data.Fix (Fix(..))
 import Data.Functor.Base (TreeF(..))
 import Data.Functor.Identity (Identity(..))
+import Data.Bifunctor (first)
 
-parseTest' :: Maybe Text -> JSON.Value -> String -> IO (V ExecutableOperation)
+parseTest'
+  :: Maybe Text
+  -> JSON.Value
+  -> String
+  -> IO (Either GraphQLError (Operation (Tree (Field JSON.Value))))
 parseTest' opName (JSON.Object input) fileName
   = ( getExecutableOperation input opName
   <=< basicRules
-  <=< parseDocument fileName )
+  <=< first NE.head
+  . parseDocument fileName )
   <$> Text.readFile fileName
 parseTest = parseTest' Nothing
 parseTestNamed = parseTest' . Just
+
+validationError :: [Pos] -> Text -> GraphQLError
+validationError pos = GraphQLError VALIDATION_ERROR (Just pos) Nothing
+
+parseError :: [Pos] -> Text -> GraphQLError
+parseError pos = GraphQLError SYNTAX_ERROR (Just pos) Nothing
 
 spec :: Spec
 spec = describe "document" $ do
@@ -83,10 +95,10 @@ spec = describe "document" $ do
     parseTest good_input "test/queries/good_input.graphql" `shouldReturn`
       Right op
     parseTest bad_input "test/queries/good_input.graphql" `shouldReturn`
-      validationError [Pos 3 16] "Required variable $nonNullVar is missing from input"
+      Left (validationError [Pos 3 16] "Required variable $nonNullVar is missing from input")
   it "test/queries/bad_input_undefined_variable.graphql" $ do
     parseTest (object []) "test/queries/bad_input_undefined_variable.graphql" `shouldReturn`
-      validationError [Pos 2 12] "Variable $someVar is not defined"
+      Left (validationError [Pos 2 12] "Variable $someVar is not defined")
   it "test/queries/good_selection.graphql" $ do
     let
       val'b = HashMap.fromList
@@ -132,22 +144,22 @@ spec = describe "document" $ do
     parseTestNamed "Subscription" (object []) "test/queries/good_selection_multiple_named_operations.graphql"
       `shouldReturn` Right subscription
     parseTestNamed "X" (object []) "test/queries/good_selection_multiple_named_operations.graphql"
-      `shouldReturn` validationError [] "Operation X is not defined"
+      `shouldReturn` Left (validationError [] "Operation X is not defined")
   it "test/queries/bad_selection_unused_fragment.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_unused_fragment.graphql"
-      `shouldReturn` validationError [Pos 3 10, Pos 4 10] "Document has unused fragments: A, B"
+      `shouldReturn` Left (validationError [Pos 4 10, Pos 3 10] "Document has unused fragments: B, A")
   it "test/queries/bad_selection_missing_operation.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_missing_operation.graphql"
-      `shouldReturn` parseError [] "Expected at least one root operation, found none"
+      `shouldReturn` Left (parseError [] "Expected at least one root operation, found none")
   it "test/queries/bad_selection_fragment_cycle.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_fragment_cycle.graphql"
-      `shouldReturn` validationError [Pos 12 11] "Cycle in fragment A0"
+      `shouldReturn` Left (validationError [Pos 12 11] "Cycle in fragment A0")
   it "test/queries/bad_selection_duplicated_fragment_names.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_duplicated_fragment_names.graphql"
-      `shouldReturn` validationError [Pos 5 10, Pos 6 10] "Duplicated fragment name A"
+      `shouldReturn` Left (validationError [Pos 5 10, Pos 6 10] "Duplicated fragment name A")
   it "test/queries/bad_selection_multiple_unnamed_operations.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_multiple_unnamed_operations.graphql"
-      `shouldReturn` validationError [Pos 3 1] "Unnamed operation in document with multiple operations"
+      `shouldReturn` Left (validationError [Pos 3 1] "Unnamed operation in document with multiple operations")
   it "test/queries/bad_selection_duplicated_operation_names.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_duplicated_operation_names.graphql"
-      `shouldReturn` validationError [Pos 1 1, Pos 2 1] "Duplicated operation name A"
+      `shouldReturn` Left (validationError [Pos 1 1, Pos 2 1] "Duplicated operation name A")
