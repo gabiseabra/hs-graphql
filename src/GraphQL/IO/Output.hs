@@ -47,6 +47,7 @@ import           GraphQL.Response (Response(..))
 import           GraphQL.TypeSystem
 import           GraphQL.Types ()
 import           Prelude hiding (id, (.))
+import qualified Debug.Trace as Debug
 
 type V = Either E.GraphQLError
 
@@ -66,13 +67,14 @@ resolve def@ObjectType {..} s = def `object` s
 resolve def@UnionType {..} s = def `union` s
 
 object :: forall m a. Monad m => TypeDef (OBJECT @m) a -> AST.ExecutableSelection -> V (Kleisli m a JSON.Value)
-object def@ObjectType {..} s@(pos:<NodeF field as) = do
+object def@ObjectType {..} s@(pos:<NodeF _ as) = do
   validateTypename objectTypename s
   fmap JSON.Object . sequence . HashMap.fromList
     <$> traverse (bisequence . (pure . k &&& v)) as
   where
     k (_:<NodeF field _) = fieldName' field
     v s = runResolver s =<< select def s
+        <* validateTypename objectTypename s
 
 runResolver :: forall m a r. Monad m => AST.ExecutableSelection -> Resolver m a -> V (Kleisli m a JSON.Value)
 runResolver s@(pos:<NodeF AST.Field{..} _) (Exists2 (Field {..} :: Field (Kleisli m a) i o)) = do
@@ -81,13 +83,16 @@ runResolver s@(pos:<NodeF AST.Field{..} _) (Exists2 (Field {..} :: Field (Kleisl
   pure $ fbr . fab
 
 select :: forall m k a. Applicative m => TypeDef (OBJECT @m) a -> AST.ExecutableSelection -> V (Resolver m a)
-select ObjectType {..} (_:<NodeF field@AST.Field {fieldName = "__typename", ..} _)
-  = pure . Exists2 . Field mempty
-  $ \() -> Kleisli . const . pure $ objectTypename
+select ObjectType {..} (pos:<NodeF field@AST.Field {fieldName = "__typename", ..} _)
+  | not $ HashMap.null fieldArgs
+      = E.graphQLError E.VALIDATION_ERROR [pos] "Field __typename does not have arguments"
+  | otherwise
+      = pure . Exists2 . Field mempty
+      $ \() -> Kleisli . const . pure $ objectTypename
 select ObjectType {..} (pos:<NodeF field@AST.Field {..} _)
   = maybe
     ( E.graphQLError E.VALIDATION_ERROR [pos]
-    $ objectTypename <> " does not have a field named " <> fieldName
+    $ objectTypename <> " does not have a field named \"" <> fieldName <> "\""
     ) pure
   . flip Map.lookup objectFields $ fieldName
 
@@ -125,7 +130,8 @@ fieldName' f = fromMaybe (AST.fieldName f) (AST.fieldAlias f)
 
 validateTypename :: Typename -> AST.ExecutableSelection -> V ()
 validateTypename t0 (pos:<NodeF AST.Field {..} _)
-  | Just (t1, False) <- (id &&& (==) t0) <$> fieldType
+  | Just t1 <- fieldType
+  , t1 /= t0
       = E.graphQLError E.VALIDATION_ERROR  [pos]
       $ "Typename mismatch: Expected " <> t0 <> ", got " <> t1
   | otherwise = pure ()

@@ -53,9 +53,9 @@ enumSpec = describe "enumDef" $ do
       i = object [ "i0" .= ("ENUM_A" :: String) ]
       s = [ sel "a0" i &: [] ]
       o = object [ "a0" .= ("ENUM_A" :: String) ]
-    exec s a `shouldReturn` o
+    exec a s `shouldReturn` o
   it "fails with invalid enum value" $ do
     let
       i = object [ "i0" .= ("ENUM_X" :: String) ]
       s = [ sel "a0" i &: [] ]
-    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Failed to read Enum0. \"ENUM_X\" is not a valid enum value"
+    eval @(A IO) s `shouldBe` inputError [pos 0 0] "Failed to parse ENUM Enum0: \"ENUM_X\" is not a valid value of Enum0"

@@ -61,18 +61,18 @@ unionSpec = describe "unionDef" $ do
           [ "__typename" .= ("A" :: String)
           , "a0" .= (420 :: Int)
           ]
-    exec s ab `shouldReturn` o
+    exec ab s `shouldReturn` o
 
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection" $ do
-    eval @(AB IO) [] `shouldBe` E.validationError [] "Union type AB must have a selection"
+    eval @(AB IO) [] `shouldBe` validationError [E.Pos 0 0] "Union type AB must have a selection"
   it "fails with invalid typename" $ do
     let s = [ sel_ "x" `on` "X" &: [] ]
-    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "X is not a possible type of union type AB"
+    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "\"X\" is not a possible type of AB"
   it "fails with unspecified typename" $ do
     let s = [ sel_ "a0" &: [] ]
-    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "Invalid selection with unspecified typename on union type AB"
+    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "Selections of union types must have a typename"
   it "fails with invalid selection on possible type" $ do
     let s = [ sel_ "a1" `on` "A" &: [] ]
-    eval @(AB IO) s `shouldBe` E.validationError [E.Pos 0 0] "Field a1 does not exist in object of type A"
+    eval @(AB IO) s `shouldBe` validationError [E.Pos 0 0] "A does not have a field named \"a1\""

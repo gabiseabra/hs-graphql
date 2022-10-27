@@ -50,7 +50,7 @@ inputTypeParser def@ScalarType {..} = fmap (prependFailure def) JSON.parseJSON
 inputTypeParser def@EnumType {..} = fmap (prependFailure def) $ \case
   JSON.String val -> case Map.lookup val enumValues of
     Just EnumValue {..} -> pure enumValue
-    Nothing -> fail . Text.unpack $ val <> "\" is not a valid value of " <> enumTypename
+    Nothing -> fail . Text.unpack $ "\"" <> val <> "\" is not a valid value of " <> enumTypename
   val -> JSON.typeMismatch "String" val
 inputTypeParser def@ListType {..} = traverse (inputTypeParser listInnerType) <=< fmap (prependFailure def) JSON.parseJSON1
 inputTypeParser def@NullableType {..} = traverse (inputTypeParser nullableInnerType) <=< fmap (prependFailure def) JSON.parseJSON1

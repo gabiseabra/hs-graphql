@@ -60,7 +60,7 @@ instance (Applicative m) => GraphQLType (A m) where
   type KIND (A m) = OBJECT @m
   typeDef = resolverDef "A"
 
-a :: Input1 -> (A IO)
+a :: Input1 -> A IO
 a (Input1 { i1_0, i1_1 })
   = A { a0 = \_ -> pure i1_0
       , a1 = \_ -> pure (fmap show i1_1)
@@ -100,7 +100,7 @@ inputObjectSpec = describe "inputObjectDef" $ do
             , "eyy" .= ("lmao" :: String)
             ]
           ]
-    exec s a' `shouldReturn` o
+    exec a' s `shouldReturn` o
 
 validationSpec :: Spec
 validationSpec = describe "inputObjectDef" $ do
@@ -108,7 +108,7 @@ validationSpec = describe "inputObjectDef" $ do
     let
       i = object [ "i1_0" .= ("lmao" :: String) ]
       s = [ sel "a3" i &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Failed to read Int. Unexpected String"
+    eval @(A IO) s `shouldBe` inputError [E.Pos 0 0] "Failed to parse SCALAR Int: parsing Int failed, expected Number, but encountered String"
   it "fails with missing input fields" $ do
     let s = [ sel_ "a3" &: [ sel_ "a0" &: [] ] ]
-    eval @(A IO) s `shouldBe` E.validationError [E.Pos 0 0] "Failed to read Int. Unexpected Null"
+    eval @(A IO) s `shouldBe` inputError [E.Pos 0 0] "Failed to parse SCALAR Int: parsing Int failed, expected Number, but encountered Null"
