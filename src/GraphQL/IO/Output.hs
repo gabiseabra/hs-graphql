@@ -31,6 +31,7 @@ import qualified Data.Aeson as JSON
 import qualified Data.Aeson.Types as JSON (parse)
 import           Data.Bitraversable (bisequence)
 import           Data.Functor.Base (TreeF(..))
+import           Data.Functor.Identity (Identity(..))
 import qualified Data.HashMap.Strict as HashMap
 import           Data.HashMap.Strict (HashMap)
 import           Data.Hashable (Hashable(..))
@@ -62,6 +63,7 @@ resolve ObjectType {..} (pos:<NodeF _ []) = E.graphQLError E.VALIDATION_ERROR [p
 resolve UnionType {..} (pos:<NodeF _ []) = E.graphQLError E.VALIDATION_ERROR [pos] $ "Union type " <> unionTypename <> " must have a selection"
 resolve ScalarType {} _ = pure . Kleisli $ pure . JSON.toJSON
 resolve EnumType {..} _ = pure . Kleisli $ pure . JSON.String . encodeEnum
+resolve def@PureType {..} s = Kleisli . fmap (pure . runIdentity) . runKleisli <$> resolve pureInnerType s
 resolve def@ListType {..} s = fmap JSON.toJSON1 . traverseK <$> resolve @m listInnerType s
 resolve def@NullableType {..} s = fmap JSON.toJSON1 . traverseK <$> resolve @m nullableInnerType s
 resolve def@ObjectType {..} s = def `object` s

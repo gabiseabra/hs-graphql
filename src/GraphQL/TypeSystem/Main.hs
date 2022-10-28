@@ -43,10 +43,13 @@ data TypeKind where
   SCALAR       ::                         TypeKind
   ENUM         ::                         TypeKind
   INPUT_OBJECT ::                         TypeKind
-  OBJECT       :: forall (m :: * -> *)  . TypeKind
   UNION        :: forall (m :: * -> *)  . TypeKind
+  OBJECT       :: forall (m :: * -> *)  . TypeKind
+  PURE         :: TypeKind             -> TypeKind
   LIST         :: TypeKind             -> TypeKind
   NULLABLE     :: TypeKind             -> TypeKind
+
+type PURE_OBJECT = PURE (OBJECT @Identity) :: TypeKind
 
 data TypeIO = IN | OUT
 
@@ -67,6 +70,7 @@ type family k || m where
   INPUT_OBJECT  || m = m
   UNION   @m    || _ = m
   OBJECT  @m    || _ = m
+  PURE     k    || m = m
   (k' k)        || m = k || m
 
 type k !! m = k || m ~ m
@@ -155,6 +159,11 @@ data TypeDef k a where
     , unionDescription :: Maybe Text
     , unionPossibleTypes :: Map Typename (Variant m a)
     } -> TypeDef (UNION @m) a
+  PureType ::
+    ( k !! Identity
+    ) =>
+    { pureInnerType :: TypeDef k a
+    } -> TypeDef (PURE k) a
   ListType ::
     ( JSON.ToJSON1 f
     , JSON.FromJSON1 f
@@ -184,6 +193,7 @@ _typename f t = f (get t) <&> set t
     get ObjectType {..} = objectTypename
     get InputObjectType {..} = inputObjectTypename
     get UnionType {..} = unionTypename
+    get PureType {..} = get pureInnerType
     get ListType {..} = listTypename
     get NullableType {..} = nullableTypename
 
@@ -193,6 +203,7 @@ _typename f t = f (get t) <&> set t
     set def@ObjectType {..} a = def {objectTypename = a}
     set def@InputObjectType {..} a = def {inputObjectTypename = a}
     set def@UnionType {..} a = def {unionTypename = a}
+    set def@PureType {..} a = PureType $ set pureInnerType a
     set def@ListType {..} a = def {listTypename = a}
     set def@NullableType {..} a = def {nullableTypename = a}
 
@@ -205,6 +216,7 @@ _description f t = f (get t) <&> set t
     get InputObjectType {..} = inputObjectDescription
     get ObjectType {..} = objectDescription
     get UnionType {..} = unionDescription
+    get PureType {..} = get pureInnerType
     get ListType {..} = listDescription
     get NullableType {..} = nullableDescription
 
@@ -214,6 +226,7 @@ _description f t = f (get t) <&> set t
     set def@InputObjectType {..} a = def {inputObjectDescription = a}
     set def@ObjectType {..} a = def {objectDescription = a}
     set def@UnionType {..} a = def {unionDescription = a}
+    set def@PureType {..} a = PureType $ set pureInnerType a
     set def@ListType {..} a = def {listDescription = a}
     set def@NullableType {..} a = def {nullableDescription = a}
 
@@ -223,7 +236,6 @@ kindOf EnumType{} = "ENUM"
 kindOf InputObjectType{} = "INPUT_OBJECT"
 kindOf ObjectType{} = "OBJECT"
 kindOf UnionType{} = "UNION"
+kindOf PureType{..} = kindOf pureInnerType
 kindOf ListType{..} = "LIST " <> kindOf listInnerType
 kindOf NullableType{..} = "NULLABLE " <> kindOf nullableInnerType
-
-data SomeType where SomeType :: TypeDef k a -> SomeType

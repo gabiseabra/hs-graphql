@@ -18,6 +18,7 @@ module GraphQL.TypeSystem.TypeDefs where
 import           Control.Applicative (Alternative(..))
 import           Control.Arrow (Kleisli(..), (&&&))
 import qualified Data.Aeson as JSON
+import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import           Data.Proxy (Proxy(..))
@@ -113,9 +114,16 @@ objectDef ty
   $ recordAccessors @a
   where
     go :: forall r. GraphQLOutputType m r => (a -> r) -> Resolver m a
-    go = Exists2 @GraphQLInput @()
-                 @(GraphQLOutputType m) @r
-      . Field mempty . const . Kleisli . (pure .)
+    go f = resolver mempty $ \() -> pure . f
+
+pureObjectDef :: forall a
+  .  Rec.FromNative a
+  => Row.AllUniqueLabels (Rec.NativeRow a)
+  => Row.Forall (Rec.NativeRow a) (GraphQLOutputType Identity)
+  => Row.FreeForall (Rec.NativeRow a)
+  => Typename
+  -> TypeDef PURE_OBJECT a
+pureObjectDef = PureType . objectDef
 
 resolverDef :: forall a m
   .  Rec.FromNative a

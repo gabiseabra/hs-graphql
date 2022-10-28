@@ -45,8 +45,8 @@ a = A { a0 = \_ -> pure 420
 newtype B = B { b0 :: Int } deriving (Generic)
 
 instance GraphQLType B where
-  type KIND B = OBJECT @IO
-  typeDef = objectDef "B"
+  type KIND B = PURE_OBJECT
+  typeDef = PureType $ objectDef "B"
 
 b = B 420 :: B
 
