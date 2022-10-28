@@ -12,6 +12,7 @@
   , StandaloneKindSignatures
   , AllowAmbiguousTypes
   , PolyKinds
+  , DerivingStrategies
 #-}
 
 module GraphQL.Types where
@@ -20,8 +21,10 @@ import GraphQL.TypeSystem
 
 import GHC.Exts (Constraint)
 import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
+import GHC.Generics (Generic)
 
 import qualified Data.Aeson as JSON
+import qualified Data.Aeson.Types as JSON
 import Data.Proxy (Proxy(..))
 import Data.Row (type (.+), type (.==), type (.!))
 import Data.List.NonEmpty (NonEmpty)
@@ -32,7 +35,9 @@ import Data.Void (Void)
 import Data.Text (Text)
 import qualified Data.Text as Text
 
-newtype ID = ID String deriving (JSON.ToJSON, JSON.FromJSON)
+newtype ID = ID String
+  deriving (Eq, Show)
+  deriving newtype (JSON.ToJSON, JSON.FromJSON)
 
 instance GraphQLType ID where
   type KIND ID = SCALAR
@@ -65,6 +70,19 @@ instance GraphQLType Text where
 instance GraphQLType Char where
   type KIND Char = SCALAR
   typeDef = scalarDef "String"
+
+data Empty = Empty
+  deriving (Eq, Show)
+
+instance JSON.ToJSON Empty where
+  toJSON _ = JSON.Null
+instance JSON.FromJSON Empty where
+  parseJSON JSON.Null = pure Empty
+  parseJSON val       = JSON.typeMismatch "null" val
+
+instance GraphQLType Empty where
+  type KIND Empty = SCALAR
+  typeDef = scalarDef "Empty"
 
 instance GraphQLType a => GraphQLType (Maybe a) where
   type KIND (Maybe a) = NULLABLE (KIND a)
