@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module GraphQL.AST.Validation
+module GraphQL.Parser.Validation
   ( basicRules
   , mergeOverlappingFields
   , validateDefaultValues
@@ -39,7 +39,7 @@ import           Data.Set (Set)
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import qualified Data.Text.Lazy as LazyText
-import           GraphQL.AST.Document
+import           GraphQL.Parser.Types
 import           GraphQL.Internal (cataM)
 import           GraphQL.Response (Pos, ErrorCode(..), GraphQLError(..), graphQLError)
 import Data.Functor.Foldable (cata)
@@ -70,7 +70,7 @@ mergeOverlappingFields = traverse . cataM $ \(pos CofreeT.:< NodeF a as) -> (pos
     name f = fieldAlias f <|> Just (fieldName f)
     overlaps = (==) `on` name
 
--- Validates that variables' default values are valid
+-- Validates that variables' default values match their respective type definitions
 validateDefaultValues :: Rule' a
 validateDefaultValues doc = do
   mapMOf_ (_docOperations . traverse . _opVariables . traverse) validation doc

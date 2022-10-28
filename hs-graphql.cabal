@@ -18,17 +18,17 @@ library
   exposed-modules:
     GraphQL.Response
     GraphQL.Internal
-    GraphQL.Types
-    GraphQL.TypeSystem
-    GraphQL.TypeSystem.Main
-    GraphQL.TypeSystem.TypeDefs
-    GraphQL.IO.Input
-    GraphQL.IO.Output
-    GraphQL.AST
-    GraphQL.AST.Parser
-    GraphQL.AST.Lexer
-    GraphQL.AST.Document
-    GraphQL.AST.Validation
+    GraphQL.Schema
+    GraphQL.Schema.Class
+    GraphQL.Schema.Generic
+    GraphQL.Schema.Types
+    GraphQL.Resolver.Input
+    GraphQL.Resolver.Output
+    GraphQL.Parser
+    GraphQL.Parser.Lexer
+    GraphQL.Parser.Parser
+    GraphQL.Parser.Types
+    GraphQL.Parser.Validation
   default-language:    Haskell2010
   build-depends:
       base >= 4.7 && < 5

@@ -1,39 +1,42 @@
-{-# LANGUAGE
-    TypeFamilies
-  , DataKinds
-  , OverloadedStrings
-  , GeneralizedNewtypeDeriving
-  , TypeApplications
-  , ScopedTypeVariables
-  , UndecidableInstances
-  , FlexibleInstances
-  , MultiParamTypeClasses
-  , TypeOperators
-  , StandaloneKindSignatures
-  , AllowAmbiguousTypes
-  , PolyKinds
-  , DerivingStrategies
-#-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 
-module GraphQL.Types where
+module GraphQL.Schema.Types where
 
-import GraphQL.TypeSystem
-
-import GHC.Exts (Constraint)
-import GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
-import GHC.Generics (Generic)
-
-import qualified Data.Aeson as JSON
-import qualified Data.Aeson.Types as JSON
-import Data.Proxy (Proxy(..))
-import Data.Row (type (.+), type (.==), type (.!))
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
-import Data.Vector (Vector)
-import qualified Data.Vector as Vec
-import Data.Void (Void)
-import Data.Text (Text)
-import qualified Data.Text as Text
+import qualified Data.Aeson                    as JSON
+import qualified Data.Aeson.Types              as JSON
+import           Data.List.NonEmpty             ( NonEmpty )
+import qualified Data.List.NonEmpty            as NE
+import           Data.Proxy                     ( Proxy(..) )
+import           Data.Row                       ( type (.!)
+                                                , type (.+)
+                                                , type (.==)
+                                                )
+import           Data.Text                      ( Text )
+import qualified Data.Text                     as Text
+import           Data.Vector                    ( Vector )
+import qualified Data.Vector                   as Vec
+import           Data.Void                      ( Void )
+import           GHC.Exts                       ( Constraint )
+import           GHC.Generics                   ( Generic )
+import           GHC.TypeLits                   ( KnownSymbol
+                                                , Symbol
+                                                , symbolVal
+                                                )
+import           GraphQL.Schema.Class
+import           GraphQL.Schema.Generic
 
 newtype ID = ID String
   deriving (Eq, Show)
