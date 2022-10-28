@@ -55,7 +55,8 @@ enumSpec = describe "enumDef" $ do
   it "fails with invalid enum value" $ do
     let i = object ["i0" .= ("ENUM_X" :: String)]
         s = [sel "a0" i &: []]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.BAD_INPUT_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["a0"])
       "Failed to parse ENUM Enum0: \"ENUM_X\" is not a valid value of Enum0"

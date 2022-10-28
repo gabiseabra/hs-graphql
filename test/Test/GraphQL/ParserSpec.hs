@@ -97,15 +97,17 @@ spec = describe "document" $ do
     parseTest good_input "test/queries/good_input.graphql"
       `shouldReturn` Right op
     parseTest bad_input "test/queries/good_input.graphql"
-      `shouldReturn` E.graphQLError
+      `shouldReturn` graphQLError
                        E.VALIDATION_ERROR
-                       [E.Pos 3 16]
+                       (Just [E.Pos 3 16])
+                       Nothing
                        "Required variable $nonNullVar is missing from input"
   it "test/queries/bad_input_undefined_variable.graphql" $ do
     parseTest (object []) "test/queries/bad_input_undefined_variable.graphql"
-      `shouldReturn` E.graphQLError E.VALIDATION_ERROR
-                                    [E.Pos 2 12]
-                                    "Variable $someVar is not defined"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  (Just [E.Pos 2 12])
+                                  Nothing
+                                  "Variable $someVar is not defined"
   it "test/queries/good_selection.graphql" $ do
     let val'b = HashMap.fromList [("var", JSON.toJSON (420 :: Int))]
         op    = Query (E.Pos 1 1) Nothing mempty $ NE.fromList
@@ -158,42 +160,48 @@ spec = describe "document" $ do
         "X"
         (object [])
         "test/queries/good_selection_multiple_named_operations.graphql"
-      `shouldReturn` E.graphQLError
-                       E.VALIDATION_ERROR
-                       []
-                       "Operation X is not defined"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  Nothing
+                                  Nothing
+                                  "Operation X is not defined"
   it "test/queries/bad_selection_unused_fragment.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_unused_fragment.graphql"
-      `shouldReturn` E.graphQLError E.VALIDATION_ERROR
-                                    [E.Pos 4 10, E.Pos 3 10]
-                                    "Document has unused fragments: B, A"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  (Just [E.Pos 4 10, E.Pos 3 10])
+                                  Nothing
+                                  "Document has unused fragments: B, A"
   it "test/queries/bad_selection_missing_operation.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_missing_operation.graphql"
-      `shouldReturn` E.graphQLError
+      `shouldReturn` graphQLError
                        E.SYNTAX_ERROR
-                       []
+                       Nothing
+                       Nothing
                        "Expected at least one root operation, found none"
   it "test/queries/bad_selection_fragment_cycle.graphql" $ do
     parseTest (object []) "test/queries/bad_selection_fragment_cycle.graphql"
-      `shouldReturn` E.graphQLError E.VALIDATION_ERROR
-                                    [E.Pos 12 11]
-                                    "Cycle in fragment A0"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  (Just [E.Pos 12 11])
+                                  Nothing
+                                  "Cycle in fragment A0"
   it "test/queries/bad_selection_duplicated_fragment_names.graphql" $ do
     parseTest (object [])
               "test/queries/bad_selection_duplicated_fragment_names.graphql"
-      `shouldReturn` E.graphQLError E.VALIDATION_ERROR
-                                    [E.Pos 5 10, E.Pos 6 10]
-                                    "Duplicated fragment name A"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  (Just [E.Pos 5 10, E.Pos 6 10])
+                                  Nothing
+                                  "Duplicated fragment name A"
   it "test/queries/bad_selection_multiple_unnamed_operations.graphql" $ do
     parseTest (object [])
               "test/queries/bad_selection_multiple_unnamed_operations.graphql"
-      `shouldReturn` E.graphQLError
+      `shouldReturn` graphQLError
                        E.VALIDATION_ERROR
-                       [E.Pos 3 1]
+                       (Just [E.Pos 3 1])
+                       Nothing
                        "Unnamed operation in document with multiple operations"
   it "test/queries/bad_selection_duplicated_operation_names.graphql" $ do
     parseTest (object [])
               "test/queries/bad_selection_duplicated_operation_names.graphql"
-      `shouldReturn` E.graphQLError E.VALIDATION_ERROR
-                                    [E.Pos 1 1, E.Pos 2 1]
-                                    "Duplicated operation name A"
+      `shouldReturn` graphQLError E.VALIDATION_ERROR
+                                  (Just [E.Pos 1 1, E.Pos 2 1])
+                                  Nothing
+                                  "Duplicated operation name A"

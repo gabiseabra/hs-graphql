@@ -172,7 +172,7 @@ argsE' f p pK pV = p $ manyE $ \kv -> do
   pos <- getPos
   k   <- pK <* symbol ":"
   if List.any ((== k) . fst) kv
-    then syntaxErrorP [pos] $ "Duplicated argument " <> k
+    then syntaxErrorP (Just [pos]) $ "Duplicated argument " <> k
     else (,) <$> pure k <*> (f k =<< pV)
 
 argsE
@@ -274,9 +274,9 @@ blockString =
 stringVal :: Parser Text
 stringVal = label "StringVal" $ choice [blockString, lineString] <* sc
 
-syntaxErrorP :: [E.Pos] -> Text -> Parser a
+syntaxErrorP :: Maybe [E.Pos] -> Text -> Parser a
 syntaxErrorP pos msg =
-  customFailure $ E.GraphQLError E.SYNTAX_ERROR (Just pos) Nothing msg
+  customFailure $ E.GraphQLError E.SYNTAX_ERROR pos Nothing msg
 
 validationErrorP :: [E.Pos] -> Text -> Parser a
 validationErrorP pos msg =

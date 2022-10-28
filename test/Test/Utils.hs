@@ -58,3 +58,12 @@ eval
   => [ExecutableSelection]
   -> Either (NonEmpty GraphQLError) ()
 eval = second (const ()) . resolveType @IO @a . root
+
+graphQLError
+  :: ErrorCode
+  -> Maybe [Pos]
+  -> Maybe [Text]
+  -> Text
+  -> Either (NonEmpty GraphQLError) a
+graphQLError errorCode locations path message =
+  Left . pure $ GraphQLError errorCode locations path message

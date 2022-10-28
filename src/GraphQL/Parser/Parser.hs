@@ -174,7 +174,7 @@ validateDocumentP (frags, ops) =
 validateOperationsP
   :: [Operation a] -> Parser ((Identity :+: HashMap Name) (Operation a))
 validateOperationsP [] =
-  L.syntaxErrorP [] "Expected at least one root operation, found none"
+  L.syntaxErrorP Nothing "Expected at least one root operation, found none"
 validateOperationsP [op] = pure $ InL $ pure op
 validateOperationsP ops =
   InR

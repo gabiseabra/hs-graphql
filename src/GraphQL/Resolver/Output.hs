@@ -20,6 +20,7 @@ module GraphQL.Resolver.Output
 
 import           Control.Applicative            ( (<|>) )
 import           Control.Arrow                  ( (&&&)
+                                                , (>>>)
                                                 , Kleisli(..)
                                                 )
 import           Control.Category               ( Category(..) )
@@ -30,6 +31,9 @@ import           Control.Monad                  ( (<=<)
                                                 , join
                                                 )
 import           Control.Monad.Error.Class      ( MonadError(..) )
+import           Control.Monad.Reader           ( MonadReader(..)
+                                                , ReaderT(..)
+                                                )
 import qualified Data.Aeson                    as JSON
 import qualified Data.Aeson.Types              as JSON
                                                 ( parse )
@@ -43,33 +47,63 @@ import           Data.List.NonEmpty             ( NonEmpty )
 import qualified Data.Map.Strict               as Map
 import           Data.Map.Strict                ( Map )
 import           Data.Maybe                     ( fromMaybe )
+import           Data.Proxy                     ( Proxy )
+import qualified Data.Sequence                 as Seq
+import           Data.Sequence                  ( Seq
+                                                , (|>)
+                                                )
 import qualified Data.Text                     as Text
 import           Data.Text                      ( Text )
 import qualified Debug.Trace                   as Debug
-import           GraphQL.Internal               ( Exists1(..)
-                                                , Exists2(..)
-                                                )
+import           GraphQL.Internal
 import qualified GraphQL.Parser.Types          as AST
 import           GraphQL.Resolver.Input         ( Input
                                                 , inputParser
                                                 )
 import qualified GraphQL.Response              as E
-import           GraphQL.Response               ( Response(..) )
 import           GraphQL.Schema
 import           Prelude                 hiding ( (.)
                                                 , id
                                                 )
+import Data.Foldable (toList)
+import Data.Functor ((<&>))
 
-type V = Either (NonEmpty E.GraphQLError)
+type V = ReaderT ExecutionContext (Either (NonEmpty E.GraphQLError))
 
--- Resolve type with better inference
+graphQLError :: E.ErrorCode -> Text -> V a
+graphQLError errorCode msg = do
+  pos <- Just . pure <$> reader currentPos
+  path <- reader (toList . path) <&> \case
+            [] -> Nothing
+            as -> Just as
+  throwError . pure $ E.GraphQLError errorCode pos path msg
+
+data ExecutionContext = ExecutionContext
+  { currentPos    :: E.Pos
+  , parentContext :: Maybe (AST.Field JSON.Value, ExecutionContext)
+  }
+
+localCtx :: AST.ExecutableSelection -> V a -> V a
+localCtx (pos :< NodeF field _) = local ctx
+  where ctx = ExecutionContext pos . Just . (field, )
+
+path :: ExecutionContext -> Seq Text
+path ExecutionContext {..} = case parentContext of
+  Just (AST.Field {..}, parent) ->
+    path parent |> fromMaybe fieldName fieldAlias
+  Nothing -> mempty
+
+-- Runs en executable selection against an output type `a`'s type definition,
+-- returning a function that executes the selection against an actual instance
+-- of `a`, or an error if selected fields can't be matched.
 resolveType
   :: forall m a
    . Monad m
   => GraphQLOutputType m a
   => AST.ExecutableSelection
-  -> V (Kleisli m a JSON.Value)
-resolveType = resolveType' (typeDef @a)
+  -> Either (NonEmpty E.GraphQLError) (Kleisli m a JSON.Value)
+resolveType s@(pos :< _) = resolveType' (typeDef @a) s `runReaderT` ctx
+  where ctx = ExecutionContext pos Nothing
 
 resolveType'
   :: forall m a k
@@ -80,35 +114,40 @@ resolveType'
   -> AST.ExecutableSelection
   -> V (Kleisli m a JSON.Value)
 resolveType' ScalarType {..} (pos :< NodeF _ (_ : _)) =
-  E.graphQLError E.VALIDATION_ERROR [pos]
+  graphQLError E.VALIDATION_ERROR
     $  "Scalar type "
     <> scalarTypename
     <> " cannot have a selection"
 resolveType' EnumType {..} (pos :< NodeF _ (_ : _)) =
-  E.graphQLError E.VALIDATION_ERROR [pos]
+  graphQLError E.VALIDATION_ERROR
     $  "Enum type "
     <> enumTypename
     <> " cannot have a selection"
 resolveType' ObjectType {..} (pos :< NodeF _ []) =
-  E.graphQLError E.VALIDATION_ERROR [pos]
+  graphQLError E.VALIDATION_ERROR
     $  "Object type "
     <> objectTypename
     <> " must have a selection"
 resolveType' UnionType {..} (pos :< NodeF _ []) =
-  E.graphQLError E.VALIDATION_ERROR [pos]
+  graphQLError E.VALIDATION_ERROR
     $  "Union type "
     <> unionTypename
     <> " must have a selection"
 resolveType' ScalarType{}  _ = pure . Kleisli $ pure . JSON.toJSON
 resolveType' EnumType {..} _ = pure . Kleisli $ pure . JSON.String . encodeEnum
-resolveType' def@PureType {..} s =
-  Kleisli . fmap (pure . runIdentity) . runKleisli <$> resolveType' pureInnerType s
 resolveType' def@ListType {..} s =
   fmap JSON.toJSON1 . traverseK <$> resolveType' @m listInnerType s
 resolveType' def@NullableType {..} s =
   fmap JSON.toJSON1 . traverseK <$> resolveType' @m nullableInnerType s
+resolveType' def@PureType {..} s =
+  Kleisli
+    .   fmap (pure . runIdentity)
+    .   runKleisli
+    <$> resolveType' pureInnerType s
 resolveType' def@ObjectType {..} s = def `object` s
 resolveType' def@UnionType {..}  s = def `union` s
+
+-- * Object kind
 
 object
   :: forall m a
@@ -124,7 +163,11 @@ object def@ObjectType {..} s@(pos :< NodeF _ as) = do
     <$> traverse (sequence . (k &&& v)) as
  where
   k (_ :< NodeF field _) = fieldName' field
-  v s = runResolver s =<< select def s <* validateTypename objectTypename s
+  v s =
+    localCtx s
+      $   runResolver s
+      =<< select def s
+      <*  validateTypename objectTypename s
 
 runResolver
   :: forall m a r
@@ -141,6 +184,9 @@ runResolver s@(pos :< NodeF AST.Field {..} _) (Exists2 (Field {..} :: Field
     fbr <- resolveType' (typeDef @o) s
     pure $ fbr . fab
 
+__typename :: Applicative m => Text -> Resolver m a
+__typename a = Exists2 . Field Nothing . fmap Kleisli $ \() _ -> pure a
+
 select
   :: forall m k a
    . Applicative m
@@ -148,16 +194,10 @@ select
   -> AST.ExecutableSelection
   -> V (Resolver m a)
 select ObjectType {..} (pos :< NodeF field@AST.Field { fieldName = "__typename", ..} _)
-  | not $ HashMap.null fieldArgs
-  = E.graphQLError E.VALIDATION_ERROR
-                   [pos]
-                   "Field __typename does not have arguments"
-  | otherwise
-  = pure . Exists2 . Field mempty $ \() ->
-    Kleisli . const . pure $ objectTypename
+  = pure $ __typename objectTypename
 select ObjectType {..} (pos :< NodeF field@AST.Field {..} _) =
   maybe
-      (  E.graphQLError E.VALIDATION_ERROR [pos]
+      (  graphQLError E.VALIDATION_ERROR
       $  objectTypename
       <> " does not have a field named \""
       <> fieldName
@@ -166,6 +206,8 @@ select ObjectType {..} (pos :< NodeF field@AST.Field {..} _) =
       pure
     . flip Map.lookup objectFields
     $ fieldName
+
+-- * Union kind
 
 union
   :: forall m a
@@ -177,7 +219,7 @@ union def@UnionType {..} (pos :< NodeF field as) = do
   as' <- HashMap.fromListWith (++) . join <$> traverse match as
   fmap JSON.toJSON . sum . HashMap.elems <$> itraverse next as'
  where
-  match a = fmap (, [a]) <$> matchType def a
+  match s = fmap (, [s]) <$> localCtx s (matchType def s)
   next (Hash _ v) s = runVariant (pos :< NodeF field s) v
   sum :: forall a b . [Kleisli m a (Maybe b)] -> Kleisli m a (Maybe b)
   sum []       = pure Nothing
@@ -204,15 +246,13 @@ matchType UnionType {..} (pos :< NodeF AST.Field {..} _)
   = case Map.lookup t unionPossibleTypes of
     Just a -> pure [Hash t a]
     Nothing ->
-      E.graphQLError E.VALIDATION_ERROR [pos]
+      graphQLError E.VALIDATION_ERROR
         $  "\""
         <> t
         <> "\" is not a possible type of "
         <> unionTypename
   | otherwise
-  = E.graphQLError E.VALIDATION_ERROR
-                   [pos]
-                   "Selections of union types must have a typename"
+  = graphQLError E.VALIDATION_ERROR "Selections of union types must have a typename"
 
 data Hash a = Hash Text a
 
@@ -228,7 +268,7 @@ validateTypename :: Typename -> AST.ExecutableSelection -> V ()
 validateTypename t0 (pos :< NodeF AST.Field {..} _)
   | Just t1 <- fieldTypename
   , t1 /= t0
-  = E.graphQLError E.VALIDATION_ERROR [pos]
+  = graphQLError E.VALIDATION_ERROR
     $  "Typename mismatch: Expected "
     <> t0
     <> ", got "
@@ -239,7 +279,7 @@ validateTypename t0 (pos :< NodeF AST.Field {..} _)
 readInput :: forall a . GraphQLInput a => E.Pos -> Input -> V a
 readInput pos i = case JSON.parse inputParser i of
   JSON.Success a -> pure a
-  JSON.Error   e -> E.graphQLError E.BAD_INPUT_ERROR [pos] $ Text.pack e
+  JSON.Error   e -> graphQLError E.BAD_INPUT_ERROR $ Text.pack e
 
 traverseK
   :: (Applicative m, Traversable f) => Kleisli m a b -> Kleisli m (f a) (f b)

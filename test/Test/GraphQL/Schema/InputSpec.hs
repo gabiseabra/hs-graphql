@@ -102,13 +102,15 @@ validationSpec = describe "validation" $ do
   it "fails with invalid input values" $ do
     let i = object ["i1_0" .= ("lmao" :: String)]
         s = [sel "a3" i &: [sel_ "a0" &: []]]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.BAD_INPUT_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["a3"])
       "Failed to parse SCALAR Int: parsing Int failed, expected Number, but encountered String"
   it "fails with missing input fields" $ do
     let s = [sel_ "a3" &: [sel_ "a0" &: []]]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.BAD_INPUT_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["a3"])
       "Failed to parse SCALAR Int: parsing Int failed, expected Number, but encountered Null"

@@ -82,19 +82,27 @@ getOperation
   -> Document a
   -> m (Operation a)
 getOperation Nothing (Document _ (InL (Identity op))) = pure op
-getOperation Nothing (Document _ (InR _            )) = E.graphQLError
+getOperation Nothing (Document _ (InR _)) = throwError . pure $ E.GraphQLError
   E.VALIDATION_ERROR
-  []
+  Nothing
+  Nothing
   "Operation name is required on documents with multiple operations"
 getOperation (Just name) (Document _ (InL (Identity op)))
   | opName op == Just name
   = pure op
   | otherwise
-  = E.graphQLError E.VALIDATION_ERROR [] $ "Operation " <> name <> " is not defined"
+  = throwError
+    .  pure
+    $  E.GraphQLError E.VALIDATION_ERROR Nothing Nothing
+    $  "Operation "
+    <> name
+    <> " is not defined"
 getOperation (Just name) (Document _ (InR ops)) =
   case HashMap.lookup name ops of
     Nothing ->
-      E.graphQLError E.VALIDATION_ERROR []
+      throwError
+        .  pure
+        $  E.GraphQLError E.VALIDATION_ERROR Nothing Nothing
         $  "Operation "
         <> name
         <> " is not defined"
@@ -112,7 +120,9 @@ resolveValue vars = cataM alg
   alg (pos CofreeT.:< InR val      ) = pure (JSON.toJSON val)
   alg (pos CofreeT.:< InL (Const k)) = case HashMap.lookup k vars of
     Nothing ->
-      E.graphQLError E.VALIDATION_ERROR [pos]
+      throwError
+        .  pure
+        $  E.GraphQLError E.VALIDATION_ERROR (Just [pos]) Nothing
         $  "Variable $"
         <> k
         <> " is not defined"
@@ -133,7 +143,9 @@ resolveVariable = HashMap.filter (/= JSON.Null) >>> \input k var ->
       | isNullable (varTypeDefinition var)
       -> pure (var, JSON.Null)
       | otherwise
-      -> E.graphQLError E.VALIDATION_ERROR [varPos var]
+      -> throwError
+        .  pure
+        $  E.GraphQLError E.VALIDATION_ERROR (Just [varPos var]) Nothing
         $  "Required variable $"
         <> k
         <> " is missing from input"

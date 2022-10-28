@@ -118,38 +118,43 @@ simpleSpec = describe "simpleDef" $ do
 validationSpec :: Spec
 validationSpec = describe "validation" $ do
   it "fails with empty selection on objects" $ do
-    eval @(A IO) [] `shouldBe` E.graphQLError
+    eval @(A IO) [] `shouldBe` graphQLError
       E.VALIDATION_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      Nothing
       "Object type A must have a selection"
   it "fails with non-empty selection on scalars" $ do
     let s = [sel_ "a0" &: [sel_ "??" &: []]]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.VALIDATION_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["a0"])
       "Scalar type Int cannot have a selection"
   it "fails with mismatched typename" $ do
     let s = [sel_ "a0" `on` "X" &: []]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.VALIDATION_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["a0"])
       "Typename mismatch: Expected A, got X"
-  it "fails invalid selection" $ do
+  it "fails invalid selection on root type" $ do
     let s = [sel_ "x" &: []]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.VALIDATION_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["x"])
+      "A does not have a field named \"x\""
+  it "fails invalid selection on nested type" $ do
+    let s = [sel_ "a2" &: [sel_ "x" &: []]]
+    eval @(A IO) s `shouldBe` graphQLError
+      E.VALIDATION_ERROR
+      (Just [E.Pos 0 0])
+      (Just ["a2", "x"])
       "A does not have a field named \"x\""
   it "fails with non-empty selection on __typename" $ do
     let s = [sel_ "__typename" &: [sel_ "??" &: []]]
-    eval @(A IO) s `shouldBe` E.graphQLError
+    eval @(A IO) s `shouldBe` graphQLError
       E.VALIDATION_ERROR
-      [E.Pos 0 0]
+      (Just [E.Pos 0 0])
+      (Just ["__typename"])
       "Scalar type String cannot have a selection"
-  it "fails with non-empty input on __typename" $ do
-    let i = object ["a" .= True]
-        s = [sel "__typename" i &: []]
-    eval @(A IO) s `shouldBe` E.graphQLError
-      E.VALIDATION_ERROR
-      [E.Pos 0 0]
-      "Field __typename does not have arguments"
