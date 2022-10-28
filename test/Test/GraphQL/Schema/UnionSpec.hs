@@ -19,11 +19,11 @@ import           GraphQL.Schema
 import           Test.Hspec
 import           Test.Utils
 
-newtype A m = A { a0 :: () -> m Int } deriving (Generic)
+newtype A = A { a0 :: Int } deriving (Generic)
 
-instance (Applicative m) => GraphQLType (A m) where
-  type KIND (A m) = OBJECT @m
-  typeDef = resolverDef "A"
+instance GraphQLType A where
+  type KIND A = PURE_OBJECT
+  typeDef = pureObjectDef "A"
 
 newtype B m = B { b0 :: () -> m Int } deriving (Generic)
 
@@ -32,7 +32,7 @@ instance (Applicative m) => GraphQLType (B m) where
   typeDef = resolverDef "B"
 
 data AB m
-  = AB_A (A m)
+  = AB_A A
   | AB_B (B m)
   deriving (Generic)
 
@@ -41,7 +41,7 @@ instance (Applicative m) => GraphQLType (AB m) where
   typeDef = unionDef "AB"
 
 ab :: AB IO
-ab = AB_A $ A { a0 = \_ -> pure 420 }
+ab = AB_A $ A { a0 = 420 }
 
 spec :: Spec
 spec = do

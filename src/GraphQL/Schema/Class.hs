@@ -57,6 +57,7 @@ data TypeKind where
   PURE         :: TypeKind              -> TypeKind
 
 type PURE_OBJECT = PURE (OBJECT @Identity) :: TypeKind
+type PURE_UNION = PURE (UNION @Identity) :: TypeKind
 
 data TypeIO = IN | OUT
 
@@ -97,8 +98,12 @@ instance (GraphQLType a, KIND a !>> IN) => GraphQLInputType a
 class (GraphQLType a, KIND a !>> OUT, KIND a !! m) => GraphQLOutputType m a
 instance (GraphQLType a, KIND a !>> OUT, KIND a !! m) => GraphQLOutputType m a
 
-class (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
-instance (GraphQLType a, KIND a ~ OBJECT @m) => GraphQLObjectType m a
+class GraphQLObjectKind m k
+instance GraphQLObjectKind m (OBJECT @m)
+instance GraphQLObjectKind m PURE_OBJECT
+
+class (GraphQLOutputType m a) => GraphQLObjectType m a
+instance (GraphQLOutputType m a, GraphQLObjectKind m (KIND a)) => GraphQLObjectType m a
 
 -- Inputs are objects containing many input-type values.
 -- This is a separate class from GraphQLType because inputs are not proper
